@@ -1,0 +1,27 @@
+{
+  "name": "companion-preference-engine",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=24.19.0 <25",
+    "pnpm": "10.34.5"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --parallel --filter @companion-preference/runtime-local --filter @companion-preference/inspector dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "pnpm -r typecheck",
+    "check": "pnpm typecheck && pnpm test && git diff --check"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "@vitest/coverage-v8": "4.1.10",
+    "tsdown": "0.21.9",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3",
+    "vite": "8.0.16",
+    "vitest": "4.1.10"
+  }
+}
