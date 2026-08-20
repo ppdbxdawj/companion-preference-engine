@@ -189,7 +189,7 @@ schemaVersion
 - `hostId`：事件来自 AIRI、参考聊天端或其他宿主。
 - `sessionId`：宿主会话标识；宿主没有正式会话字段时只能使用明确配置的 sentinel，不能伪造成宿主原生 ID。
 - `domain`：第一阶段主要为 `work`，同时支持跨场景隔离测试。
-- `sourceRef`：可追踪到宿主事件并用于幂等去重。
+- `sourceRef`：可追踪到宿主事件；它只在宿主命名空间内唯一，幂等去重使用 `userId + companionId + relationshipId + hostId + sourceRef` 复合键。
 - `collectionPolicy`：控制哪些有类型的来源可进入系统以及是否保留正文。
 - `outboundInferencePolicy`：独立控制禁用推理、仅本地推理或明确允许的远端推理。
 - `projectionPolicy`：控制哪些宿主和领域可以读取派生结果。
@@ -302,20 +302,24 @@ companion.support_style
 - 健康、亲密关系和情绪数据不能自动暴露给编码 Agent。
 - 跨宿主连续性不等于所有宿主获得所有数据。
 
-## 9. 候选生命周期
+## 9. 候选与偏好生命周期
 
-基本状态机：
+证据、候选和已确认偏好是三个对象，不能共用一个状态枚举：
 
 ```text
-observed
-→ proposed
-→ confirmed | rejected
-→ superseded | revoked | deleted
+Evidence
+live → deleted-tombstone
+
+Candidate
+pending_confirmation → confirmed | rejected | superseded | deleted
+
+PreferenceRecord
+active → superseded | revoked | deleted
 ```
 
 规则：
 
-- 用户在 Inspector 或显式工具中直接设置的偏好可以立即生效。
+- 用户在 Inspector 等可证明人工动作的通道中直接设置的偏好可以立即生效；普通 Agent/MCP 工具调用只能提出待确认候选。
 - 从普通对话识别出的内容，即使置信度很高，第一阶段也只能成为候选。
 - Observer 无权直接修改 Active Profile。
 - Adapter 无权绕过 Core 修改 Confirmed Profile。
@@ -357,7 +361,7 @@ receiveFeedback
 
 - AIRI：验证 `observeTurns`、`injectContext` 和可获取的反馈路径。
 - 参考聊天端：完整实现首轮闭环，作为宿主无关性证明。
-- MCP：提供读取 Profile、显式设置、候选查询和确认工具，不假定它能被动观察每一轮对话。
+- MCP：第一阶段提供读取 Profile、候选查询和“提出待确认候选”的工具，不假定它能被动观察每一轮对话，也不把模型发起的工具调用当成人工确认。
 - 主动投递不进入第一阶段。
 
 宿主能力可以降级。因此“同一个伙伴”表示共享同一身份和权威状态，不表示每个宿主拥有完全相同的交互能力。
@@ -433,7 +437,7 @@ Data & History
 
 第一版实现前三项。主动行为尚未实现时明确显示不可用，不提供假开关。
 
-关闭“允许应用”时，Adapter 必须停止继续注入。AIRI 第一版写入 blank tombstone，并在下一轮 context snapshot 中验证已确认文本不再出现；由于当前协议不能真正删除 bucket，也没有发送 ACK，Inspector 必须显示 `cleared-with-tombstone` 或潜在残留状态，不能显示为“已彻底清空”。
+关闭“允许应用”时，Adapter 必须停止继续注入。AIRI 第一版写入 blank tombstone 后先显示 `tombstone-locally-written`/未验证；只有下一轮 context snapshot 确认已确认文本不再出现，才显示 `verified-guidance-absent`。由于当前协议不能真正删除 bucket，也没有发送 ACK，Inspector 不能显示为“已彻底清空”。
 
 ## 14. 隐私与数据治理
 
@@ -445,7 +449,7 @@ Data & History
 - 云端 Observer 明确显示供应商，仅发送必要片段。
 - 敏感数据不能从身份或暗示中自动推断。
 - Profile 不默认跨领域、跨宿主可见。
-- 用户可查看、修改、撤销、导出和彻底删除所有数据。
+- 用户可查看、修改、撤销、导出并从活动 SQLite 数据库及其 WAL/SHM/journal 中删除数据；系统必须明确说明无法保证从外部备份、文件系统快照或 SSD 磨损均衡副本中物理抹除。
 - 暂停观察不自动删除旧数据，删除由用户单独确认。
 - 删除单条证据时，完全依赖它的未确认候选随之删除；已确认偏好是独立的用户授权记录，默认保留但来源变为无正文 tombstone，用户可同时选择撤销。
 - 完全重置会停止 Runtime、删除数据库及 WAL/SHM，并清空无正文审计记录。
@@ -486,7 +490,7 @@ Data & History
 - AIRI 和参考聊天端转换为同一种 Evidence。
 - 同一 Effective Profile 产生语义一致的 Guidance。
 - Adapter 不传递 system prompt、完整历史或未授权字段。
-- 关闭应用能够清除已注入 Context。
+- 关闭应用后已确认 Guidance 能在下一轮被验证为不存在；AIRI 当前仍可能保留空 source-bucket 行，不能宣称 bucket 已删除。
 
 ### 16.3 集成测试
 
@@ -565,7 +569,7 @@ Data & History
 4. 接入参考聊天端，闭合完整体验。
 5. 接入 AIRI Sidecar，验证真实宿主。
 6. 提交最窄 AIRI Feature Request。
-7. 增加 MCP 查询和显式设置接口。
+7. 增加 MCP 查询和受治理的候选提议接口；直接确认仍留在 Inspector 等可证明人工动作的通道。
 8. 根据 Go/No-Go 决定是否进入身份、关系、反思和主动性阶段。
 
 ## 19. 长期演进原则

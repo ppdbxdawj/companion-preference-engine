@@ -6,7 +6,7 @@
 
 **Architecture:** A host-neutral TypeScript core owns schemas, candidate lifecycle, scope resolution, conflicts, privacy projections, and explanations. The earliest gate uses an in-memory repository and fake observer so the product hypothesis can fail cheaply. A later canonical local runtime owns SQLite and exposes a loopback HTTP API; Inspector, AIRI, the reference host, and MCP are clients or adapters and never own independent profile state.
 
-**Tech Stack:** Node.js 24, pnpm 10.33, TypeScript 5.9, Valibot 1.4, Vitest 4.1, Hono 4.12, better-sqlite3 13, Vue 3.5 + Vite 8, official MCP TypeScript SDK 1.29, AIRI `@proj-airi/server-sdk` 0.11.3.
+**Tech Stack:** Node.js 24, pnpm 10.33, TypeScript 5.9, Valibot 1.4, Vitest 4.1, better-sqlite3 13, Vue 3.5 + Vite 8, a currently secure tested Hono release, the current stable official MCP server SDK, and AIRI `@proj-airi/server-sdk` 0.11.3. Exact Hono/MCP versions are xhigh-owned preflight decisions in Tasks 10 and 16 and are frozen in `pnpm-lock.yaml` only after advisory and interoperability checks.
 
 ---
 
@@ -23,6 +23,8 @@
 - Bind the runtime to `127.0.0.1`, require a bearer token, and deny cross-origin requests unless explicitly allowlisted.
 - One runtime process is the sole writer for one database.
 - Treat all bearer-authenticated local clients as trusted in M1. `allowedHosts` prevents accidental projection; it is not a hostile-client security boundary until host-bound capabilities are designed.
+- Every dependency change updates and stages the root `pnpm-lock.yaml` in the same task. xhigh must recheck current advisories, runtime compatibility, and native prebuild support before freezing a version; medium may not upgrade or downgrade it.
+- Every commit step in this plan is executed by root only after an xhigh `H-verify` PASS. Medium agents return a diff and never commit, push, or open a PR.
 - Stop after each task if the expected test output does not match; diagnose before continuing.
 
 ## Target repository layout
@@ -196,7 +198,7 @@ Expected: dependency installation succeeds and Vitest exits successfully with no
 **Step 5: Commit**
 
 ```bash
-git add .editorconfig .gitignore .node-version package.json pnpm-workspace.yaml tsconfig.base.json vitest.config.ts README.md
+git add .editorconfig .gitignore .node-version package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json vitest.config.ts README.md
 git commit -m "chore: bootstrap preference engine workspace"
 ```
 
@@ -256,6 +258,8 @@ interface InteractionEvidence {
 }
 ```
 
+`sourceRef` is unique only within its host namespace. Deduplication uses the canonical composite `(userId, companionId, relationshipId, hostId, sourceRef)`; adapters must not assume unrelated hosts generate globally unique IDs.
+
 Tests must reject unknown keys and host-native structures including `composedMessage`, `contexts`, system prompts, tools, and arbitrary metadata. Code, terminal, and tool-trace categories are rejected unless the connection's collection policy explicitly allows that typed source; this decision must come from trusted adapter metadata or explicit user authorization, never from regex classification of text. `policySnapshot` is audit input, not authority: Runtime loads the canonical Connection Settings, requires the expected revision, and enforces the canonical policy. An event can never raise its own permissions.
 
 Define a separate provenance union so content deletion remains schema-valid:
@@ -285,7 +289,16 @@ export type Preference =
   | { key: 'companion.support_style', value: 'listen_first' | 'acknowledge_then_act' | 'direct_action' }
 ```
 
-Add schemas for `PreferenceScope`, `PreferenceCandidate`, `PreferenceRecord`, `EffectiveProfileQuery`, `BehaviorGuidance`, mutation receipts, and audit events. Every non-reset user mutation carries a stable `actionId`. Full reset deliberately deletes receipts with all other data and is a no-op when replayed against an already empty store. Candidate status is one of `pending_confirmation`, `confirmed`, `rejected`, `superseded`, `revoked`, or `deleted`. Candidate identity includes a stable idempotency key derived from normalized evidence ID, preference key/value, and scope; confidence is evidence, never authority.
+Add schemas for `PreferenceScope`, `PreferenceCandidate`, `PreferenceRecord`, `EffectiveProfileQuery`, `BehaviorGuidance`, `ConnectionSettings`, `AdapterProjectionStatus`, `McpPrincipal`/capability, external proposal provenance, content-free policy decisions, mutation receipts, HTTP request/response DTOs, and audit events. Every non-reset user mutation carries a stable `actionId`. Full reset deliberately deletes receipts with all other data and is a no-op when replayed against an already empty store.
+
+Keep lifecycle types separate:
+
+```ts
+type CandidateStatus = 'pending_confirmation' | 'confirmed' | 'rejected' | 'superseded' | 'deleted'
+type PreferenceStatus = 'active' | 'superseded' | 'revoked' | 'deleted'
+```
+
+Define typed commands for external pending-only proposal, candidate deletion, preference revision/supersession, settings changes, and projection-status reporting. Candidate identity includes a stable idempotency key derived from normalized evidence/proposal provenance + preference key/value + scope; confidence is evidence, never authority.
 
 Write the failing tests first, including rejection of free-form keys and already-confirmed Observer output, then implement and rerun.
 
@@ -301,7 +314,7 @@ Expected: all behavioral schema tests PASS.
 **Step 6: Commit**
 
 ```bash
-git add packages/contracts
+git add packages/contracts pnpm-lock.yaml
 git commit -m "feat: define preference engine contracts"
 ```
 
@@ -373,7 +386,7 @@ Expected: PASS.
 **Step 5: Commit**
 
 ```bash
-git add packages/preference-core
+git add packages/preference-core pnpm-lock.yaml
 git commit -m "feat: govern preference candidate lifecycle"
 ```
 
@@ -474,7 +487,7 @@ git commit -m "feat: resolve scoped and private preferences"
 
 Define one reusable contract suite that verifies any repository implementation:
 
-- `ingestEvidenceAtomically` deduplicates by `sourceRef` and records its no-content audit event in the same commit;
+- `ingestEvidenceAtomically` deduplicates by the canonical identity/host/`sourceRef` composite and records its no-content audit event in the same commit;
 - `claimNextEvidence` leases the oldest available item with an unguessable claim token and monotonic lease version;
 - an expired claim can be recovered, while an active claim cannot be stolen;
 - a stale worker cannot renew, release, or complete a newer claim;
@@ -483,7 +496,7 @@ Define one reusable contract suite that verifies any repository implementation:
 - explicit creation, confirmation, supersession, and revocation enforce preference revision monotonicity;
 - `listActivePreferences` excludes revoked/deleted rows;
 - `confirmCandidateAtomically` persists candidate transition, preference, and audit event together or persists none;
-- explicit creation, revocation, and candidate suppression each persist state plus audit in one command;
+- external proposal, candidate delete/suppression, explicit creation, revision/supersession, and revocation each persist state plus audit in one command;
 - every non-reset mutation receipt survives restart: same action ID + same payload returns the stored result, while same action ID + different payload is a conflict;
 - deleting evidence removes pending candidates supported only by that evidence, but does not silently revoke a user-confirmed preference.
 
@@ -498,16 +511,23 @@ export interface PreferenceRepository {
   completeEvidenceProcessingAtomically(command: CompleteEvidenceProcessing): Promise<void>
   getEvidenceProvenance(id: string): Promise<EvidenceProvenance | undefined>
   listEvidenceProvenance(identity: IdentityContext): Promise<EvidenceProvenance[]>
+  proposeCandidateAtomically(command: ProposeCandidateCommand): Promise<PreferenceCandidate>
   getCandidate(id: string): Promise<PreferenceCandidate | undefined>
   listCandidates(status?: CandidateStatus): Promise<PreferenceCandidate[]>
   confirmCandidateAtomically(command: ConfirmCandidateCommand): Promise<PreferenceRecord>
   rejectCandidateAtomically(command: RejectCandidateCommand): Promise<void>
+  deleteCandidateAtomically(command: DeleteCandidateCommand): Promise<void>
   suppressCandidateAtomically(command: SuppressCandidateCommand): Promise<void>
   listCandidateSuppressions(identity: IdentityContext): Promise<CandidateSuppression[]>
   createExplicitPreferenceAtomically(command: CreateExplicitPreferenceCommand): Promise<PreferenceRecord>
+  revisePreferenceAtomically(command: RevisePreferenceCommand): Promise<PreferenceRecord>
   revokePreferenceAtomically(command: RevokePreferenceCommand): Promise<PreferenceRecord>
   getPreference(id: string): Promise<PreferenceRecord | undefined>
   listActivePreferences(identity: IdentityContext): Promise<PreferenceRecord[]>
+  getConnectionSettings(hostId: string): Promise<ConnectionSettings>
+  updateConnectionSettingsAtomically(command: UpdateConnectionSettingsCommand): Promise<ConnectionSettings>
+  reportAdapterProjectionStatusAtomically(command: ReportProjectionStatusCommand): Promise<AdapterProjectionStatus>
+  recordPolicyDecisionAtomically(decision: ContentFreePolicyDecision): Promise<void>
   listAuditEvents(query: AuditQuery): Promise<AuditEvent[]>
   deleteEvidenceAtomically(command: DeleteEvidenceCommand): Promise<DeleteEvidenceResult>
 }
@@ -517,7 +537,7 @@ export interface PreferenceRepository {
 
 **Step 3: Implement `InMemoryPreferenceRepository`**
 
-Use immutable clones at boundaries so tests cannot mutate stored state through references. Add per-step failure injection to every atomic command so state, audit, and mutation receipt are proven all-or-nothing. Enforce the same candidate idempotency keys and unique action receipts that SQLite will enforce later.
+Use immutable clones at boundaries so tests cannot mutate stored state through references. Add per-step failure injection to every atomic command so state, audit, and mutation receipt are proven all-or-nothing. Enforce the same candidate idempotency keys and unique action receipts that SQLite will enforce later. Confirmation, explicit creation, and revision must atomically supersede any active preference occupying the same identity/key/scope slot.
 
 **Step 4: Run tests**
 
@@ -548,11 +568,14 @@ git commit -m "feat: add preference repository port"
 - Create: `evals/tsconfig.json`
 - Create: `evals/datasets/work-core-v1.jsonl`
 - Create: `evals/datasets/cross-domain-core-v1.jsonl`
+- Create: `evals/datasets/held-out-input-core-v1.jsonl`
+- Create: `evals/datasets/manifest-v1.json`
 - Create: `evals/src/schema.ts`
 - Create: `evals/src/load.ts`
 - Create: `evals/src/load.test.ts`
 - Create: `evals/src/baselines/no-personalization.ts`
 - Create: `evals/src/baselines/plain-memory.ts`
+- Create: `evals/src/baselines/semantic-memory-rag.ts`
 - Create: `evals/src/baselines/manual-profile.ts`
 - Create: `evals/src/candidate-eval.ts`
 - Create: `evals/src/candidate-eval.test.ts`
@@ -570,7 +593,7 @@ Write failing tests proving `FakePreferenceObserver` returns only caller-supplie
 
 **Step 2: Freeze the dataset schema before prompt implementation**
 
-Each versioned JSONL case contains a stable ID, category, consent-safe synthetic turns, expected candidates, forbidden keys, query context, and expected guidance. Start with 24 reviewed cases:
+Each development JSONL case contains a stable ID, category, consent-safe synthetic turns, expected candidates, forbidden keys, query context, and expected guidance. Start with at least 24 reviewed development cases and a separately pre-registered held-out input set owned by xhigh:
 
 - 6 explicit or repeated work preferences;
 - 4 temporary states that must not become preferences;
@@ -578,16 +601,17 @@ Each versioned JSONL case contains a stable ID, category, consent-safe synthetic
 - 4 ambiguous abstention cases;
 - 6 cross-domain counterfactual pairs.
 
-Do not copy the user's private conversation history. Once committed, label edits require a separate reviewed commit explaining why the gold label was wrong; they may not be changed merely to improve the current prompt's score.
+Do not copy the user's private conversation history. The repository may contain consent-safe held-out inputs, but held-out labels live outside the shared workspace in an xhigh-only evaluation input that is never delegated to medium. `manifest-v1.json` records counts plus SHA-256 hashes for development data, held-out inputs, and the externally held labels. The Task 7 prompt implementer receives development data only; xhigh runs held-out scoring. Once frozen, label edits require a new manifest version and a reviewed explanation of why the gold label was wrong; they may not be changed merely to improve the current prompt's score.
 
 **Step 3: Write loader and metric tests red, then green**
 
 Report precision, recall, abstention accuracy, conflict/change accuracy, deterministic cross-domain leakage count, and candidates per 20 turns. The deterministic resolver must produce zero cross-domain leakage. Candidate extraction thresholds become binding in Task 14 after a real model is configured.
 
-**Step 4: Implement three pre-prompt baselines**
+**Step 4: Implement four pre-prompt baselines**
 
 - No personalization: produces no candidates or guidance.
 - Plain memory: unconstrained fact extraction plus lexical retrieval, without confirmation governance.
+- Strong semantic Memory/RAG: same backbone model, consented window, retrieval budget, and generation budget as the Preference Engine, but without governed candidate state.
 - Manual profile: the gold user-authored profile as an approximate upper bound.
 
 The baseline interfaces are frozen here so the later Observer cannot redefine its comparison. Generate `evals/reports/m0-baseline.md` from deterministic fixtures and record known limitations rather than claiming behavioral superiority.
@@ -598,6 +622,8 @@ The baseline interfaces are frozen here so the later Observer cannot redefine it
 corepack pnpm --filter @companion-preference/observer test
 corepack pnpm --filter @companion-preference/evals test
 corepack pnpm --filter @companion-preference/preference-core test
+corepack pnpm --filter @companion-preference/contracts test
+corepack pnpm --filter @companion-preference/contracts typecheck
 ```
 
 Expected: contracts, lifecycle, resolution, repository, fake Observer, dataset loader, and deterministic privacy checks PASS. Stop for review before any real Observer prompt is written.
@@ -605,7 +631,7 @@ Expected: contracts, lifecycle, resolution, repository, fake Observer, dataset l
 **Step 6: Commit the frozen inputs**
 
 ```bash
-git add packages/observer evals
+git add packages/observer evals pnpm-lock.yaml
 git commit -m "test: freeze minimum preference evaluation set"
 ```
 
@@ -628,6 +654,7 @@ Test that the serialized request:
 - is accepted by a remote endpoint only when `allow-configured-remote` was explicitly selected for that typed source;
 - in `local-only` mode accepts only literal loopback addresses in `127.0.0.0/8` or `::1` (or a separately implemented controlled Unix socket), rejects DNS hostnames including `localhost`, and rejects every redirect;
 - in remote mode revalidates policy for the final destination and never follows a redirect implicitly;
+- an aborted or newly revoked dispatch performs no new network write, and an in-flight fetch receives the caller's `AbortSignal`;
 - includes the allowed schema keys and a mandatory abstain path;
 - treats malformed or out-of-schema output as zero proposals;
 - never emits `confirmed` status;
@@ -651,7 +678,7 @@ COMPANION_LLM_MODEL
 COMPANION_LLM_API_KEY
 ```
 
-Parse the response with Valibot. Set a request timeout and return `[]` on parse failure; throw only transport/configuration errors that the runtime can audit.
+Parse the response with Valibot. Set a request timeout, propagate `AbortSignal`, and return `[]` on parse failure; throw only transport/configuration errors that the runtime can audit. The Observer never decides whether a stale result may commit; Runtime performs that final revision fence in Task 9.
 
 The runtime and all integration tests continue to use `FakePreferenceObserver`; no automated test may call a real model.
 
@@ -691,13 +718,14 @@ Use `better-sqlite3@13.0.3` and `valibot@1.4.2`. Add the matching `@types/better
 Run the Task 5 contract suite against `new Database(':memory:')`. Add failing tests for:
 
 - idempotent migration;
-- unique `source_ref` and candidate idempotency key;
+- unique `(user_id, companion_id, relationship_id, host_id, source_ref)` and candidate idempotency key;
 - unique mutation `action_id`, replay result, and payload hash;
 - all-or-nothing explicit atomic commands under injected failures;
 - recoverable expired evidence leases;
 - stale claim completion rejected after re-lease or evidence deletion;
 - file reopen preserving confirmed preferences;
-- WAL mode for file-backed tests.
+- WAL mode for file-backed tests;
+- `PRAGMA secure_delete = ON` for ordinary row deletion and an explicit WAL checkpoint path before destructive reset.
 
 The profile store does not own the process lock. Runtime startup acquires it in Task 9 before opening the database or running migrations.
 
@@ -707,7 +735,7 @@ Create `evidence`, `evidence_tombstones`, `candidates`, `candidate_suppressions`
 
 Implement evidence completion, confirmation/rejection, explicit preference creation, revocation, suppression, and deletion as synchronous `better-sqlite3` transactions hidden behind the asynchronous repository port. Every non-reset user mutation writes a unique `actionId`, canonical request hash, and non-sensitive result summary in the same transaction. Replaying the same ID and payload returns the prior result; changing the payload returns a typed conflict that HTTP maps to 409. No transaction body may cross an `await`.
 
-Evidence deletion physically removes the live payload, creates the no-content provenance tombstone, deletes dependent pending candidates, and scrubs evidence/counter-evidence excerpts from rejected, superseded, confirmed, or otherwise retained candidate rows. Preference records retain only the tombstoned evidence ID unless dependent revocation was explicitly requested.
+Evidence deletion physically removes the live payload under `secure_delete`, creates the no-content provenance tombstone, deletes dependent pending candidates, and scrubs evidence/counter-evidence excerpts from rejected, superseded, confirmed, or otherwise retained candidate rows. Preference records retain only the tombstoned evidence ID unless dependent revocation was explicitly requested. Document the limit: logical/SQLite erasure cannot promise removal from filesystem snapshots, backups, or SSD wear-leveling.
 
 **Step 4: Run package tests**
 
@@ -720,7 +748,7 @@ Expected: shared contract and SQLite-specific tests PASS.
 **Step 5: Commit**
 
 ```bash
-git add packages/profile-store-sqlite
+git add packages/profile-store-sqlite pnpm-lock.yaml
 git commit -m "feat: persist governed preferences in sqlite"
 ```
 
@@ -796,16 +824,22 @@ Expose methods:
 
 ```ts
 ingestEvidence
+proposeCandidate
 listPendingCandidates
 confirmCandidate
 rejectCandidate
+deleteCandidate
+suppressCandidate
 createExplicitPreference
+revisePreference
 revokePreference
 getEffectiveProfile
 listActivePreferences
 getConnectionSettings
 updateConnectionSettings
 reportAdapterProjectionStatus
+recordPolicyDecision
+listAuditEvents
 exportData
 deleteEvidence
 ```
@@ -814,7 +848,9 @@ Connection settings contain independent `collectionPolicy`, `outboundInferencePo
 
 **Step 4: Implement an idempotent, at-least-once processor**
 
-Persist evidence before enqueueing. Claim work with an unguessable fencing token and monotonic lease version, renew only with the current fence, and process one identity stream serially. Derive the candidate idempotency key from normalized evidence ID + preference + scope. Commit all proposed candidates and evidence completion through `completeEvidenceProcessingAtomically`; it validates the current worker/token/version and non-deleted evidence in the transaction. Never perform `save candidate → await → mark processed` as separate operations.
+Persist evidence before enqueueing. Claim work with an unguessable fencing token and monotonic lease version, renew only with the current fence, and process one identity stream serially. Carry the canonical settings revision on the claim. Recheck collection/learn/outbound policy immediately before dispatch, pass an `AbortSignal`, cancel queued/in-flight work when a stricter settings revision is committed, then recheck the revision and policy inside atomic completion. A revoked or late result is discarded and audited without content.
+
+Derive the candidate idempotency key from normalized evidence ID + preference + scope. Commit all proposed candidates and evidence completion through `completeEvidenceProcessingAtomically`; it validates the current worker/token/version, settings fence, and non-deleted evidence in the transaction. Never perform `save candidate → await → mark processed` as separate operations.
 
 Add failure-injection tests for crashes:
 
@@ -838,7 +874,7 @@ Launch two actual child processes in an integration test. The first must acquire
 - Regular audit history is append-only and stores IDs/reason codes, never raw conversation text.
 - Deleting evidence removes its content and dependent pending candidates. A confirmed preference remains because confirmation is a separate user authorization; its provenance becomes a non-content tombstone unless the user explicitly requests dependent revocation.
 - `RuntimeLifecycleCoordinator` owns the process lock, admission gate, Store factory/current Store, worker lifecycle, and `resetAllData`; the application service never tries to close or recreate its own repository.
-- Full reset enters maintenance mode, rejects new mutations, waits for in-flight handlers, stops workers, and retains the process lock for the entire operation. The coordinator then closes SQLite, removes only the exact configured database plus its `-wal` and `-shm` siblings, recreates the Store/application graph, clears audit history, restarts workers, and resumes service. The runtime lock is released only when the process exits. Tests use a temporary, fully resolved path, assert every deletion target before removal, and prove a second Runtime still cannot start during reset.
+- Full reset enters maintenance mode, rejects all DB-backed reads and mutations, waits for in-flight handlers, stops workers, checkpoints/truncates WAL, and retains the process lock for the entire operation. The coordinator then closes SQLite, removes only the exact configured database plus its `-wal`, `-shm`, and `-journal` siblings, recreates the Store/application graph, clears audit history, restarts workers, and resumes service. Recreate failure leaves Runtime closed in maintenance/error rather than serving a partial store. The runtime lock is released only when the process exits. Tests use a temporary, fully resolved path, resolve an existing database symlink to its final canonical file, assert every deletion target before removal, and prove a second Runtime still cannot start during reset.
 
 **Step 7: Run tests**
 
@@ -851,7 +887,7 @@ Expected: PASS.
 **Step 8: Commit**
 
 ```bash
-git add apps/runtime-local/src
+git add apps/runtime-local pnpm-lock.yaml
 git commit -m "feat: orchestrate governed preference learning"
 ```
 
@@ -869,9 +905,9 @@ git commit -m "feat: orchestrate governed preference learning"
 - Create: `packages/runtime-client/src/client.ts`
 - Create: `packages/runtime-client/src/client.test.ts`
 
-**Step 1: Add Hono dependencies**
+**Step 1: Freeze and add Hono dependencies**
 
-Add `hono@4.12.2` and `@hono/node-server@1.19.14` to runtime-local.
+xhigh checks the current Hono advisory history and Node adapter compatibility, then freezes an exact tested version not lower than the known 4.12.7 security fix line plus a compatible `@hono/node-server`. Record the decision in the lockfile; medium may not change it.
 
 **Step 2: Write failing API security tests**
 
@@ -885,7 +921,9 @@ Test:
 - invalid Valibot input returns 400;
 - collection/learn/apply settings are enforced server-side;
 - suppress and adapter-status updates validate host/scope and settings revision;
+- content-free policy-decision input rejects message text, evidence payloads, and unknown fields;
 - every non-reset user mutation requires a stable `actionId`; replaying the same request returns its stored result and reusing the ID with another payload returns 409;
+- effective-profile and connection reads return revision/ETag and honor conditional polling with 304 without exposing evidence content;
 - reset endpoint requires an exact confirmation phrase.
 
 Document the M1 threat model beside the tests: all clients possessing the one local bearer token are trusted. CORS protects browser use only. A caller-provided `hostId` and `allowedHosts` prevent accidental misprojection, not deliberate impersonation by another authenticated local process. Host-bound capabilities are deferred before any multi-user or untrusted-plugin deployment.
@@ -895,12 +933,16 @@ Document the M1 threat model beside the tests: all clients possessing the one lo
 ```text
 GET    /health
 POST   /v1/evidence
+POST   /v1/policy-decisions
 GET    /v1/candidates
+POST   /v1/candidates/propose
 POST   /v1/candidates/:id/confirm
 POST   /v1/candidates/:id/reject
 POST   /v1/candidates/:id/suppress
+DELETE /v1/candidates/:id
 GET    /v1/preferences
 POST   /v1/preferences
+POST   /v1/preferences/:id/revise
 POST   /v1/preferences/:id/revoke
 POST   /v1/profile/effective
 GET    /v1/connections
@@ -946,7 +988,7 @@ Expected: JSON reports `status: "ok"` and no profile data.
 **Step 7: Commit**
 
 ```bash
-git add apps/runtime-local packages/runtime-client
+git add apps/runtime-local packages/runtime-client pnpm-lock.yaml
 git commit -m "feat: expose authenticated local runtime api"
 ```
 
@@ -1007,7 +1049,7 @@ Expected: PASS.
 **Step 5: Commit**
 
 ```bash
-git add apps/inspector
+git add apps/inspector pnpm-lock.yaml
 git commit -m "feat: add inspector connection controls"
 ```
 
@@ -1044,7 +1086,7 @@ Poll the runtime at a modest interval only while the page is visible. Group dupl
 
 **Step 3: Implement Active Profile**
 
-Group records by domain, host visibility, and scope. Show why each record applies, its authority, revision, source evidence references, and a revoke button.
+Group records by domain, host visibility, and scope. Show why each record applies, its authority, revision, source evidence references, and revise/revoke controls. Revision sends an explicit user action and atomically supersedes the old active record; neither action is shown optimistically.
 
 **Step 4: Run UI tests and typecheck**
 
@@ -1064,7 +1106,7 @@ git add apps/inspector
 git commit -m "feat: review and manage preference profiles"
 ```
 
-## Task 13: Add a second, host-neutral reference chat client
+## Task 13: Add the first host-neutral reference chat client
 
 **Files:**
 
@@ -1089,7 +1131,7 @@ Test that the reference host:
 
 **Step 2: Implement a terminal reference host**
 
-Use Node `readline/promises`. It is intentionally small and real: it calls an OpenAI-compatible chat endpoint, applies the effective Guidance, prints the response, and submits the completed turn to the runtime. It is the second-host reuse proof, not a product UI.
+Use Node `readline/promises`. It is intentionally small and real: it calls an OpenAI-compatible chat endpoint, applies the effective Guidance, prints the response, and submits the completed turn to the runtime. It proves the first host-neutral closed loop, not two-host reuse and not a product UI; two-host reuse is proven only after AIRI passes Task 15.
 
 **Step 3: Run tests**
 
@@ -1112,8 +1154,8 @@ Run the reference host against a deterministic local fake server. Confirm:
 **Step 5: Commit**
 
 ```bash
-git add apps/reference-host
-git commit -m "feat: validate preferences in a second host"
+git add apps/reference-host pnpm-lock.yaml
+git commit -m "feat: validate the first host-neutral preference loop"
 ```
 
 ## Task 14: Expand the evaluation suite and run the M1 model gate
@@ -1125,6 +1167,7 @@ git commit -m "feat: validate preferences in a second host"
 - Create: `evals/datasets/work-v1.jsonl`
 - Create: `evals/datasets/cross-domain-v1.jsonl`
 - Create: `evals/datasets/confirmation-burden-v1.jsonl`
+- Create: `evals/datasets/manifest-v2.json`
 - Create: `evals/src/baselines/full-history.ts`
 - Modify: `evals/src/candidate-eval.ts`
 - Create: `evals/src/behavior-eval.ts`
@@ -1145,11 +1188,11 @@ Grow the 24-case M0 set to at least 60 synthetic, consented, or anonymized cases
 
 Add a separate sequential background set of at least 100 ordinary work turns with no gold preference change. It measures unnecessary confirmation burden without being distorted by the deliberately preference-heavy 60-case quality set.
 
-Any correction to an existing gold label is a separate reviewed commit with a reason. Never insert the user's private conversation history.
+Xhigh expands the external held-out labels without placing them in the shared workspace, then creates `manifest-v2.json` with new immutable counts and hashes; `manifest-v1.json` is never rewritten. Any correction to an existing gold label requires another manifest version and reviewed reason. Never insert the user's private conversation history.
 
 **Step 2: Complete the baseline matrix**
 
-Retain no-personalization, plain-memory, and manual-profile baselines from Task 6; add full-history. Keep the same backbone model and generation settings across compared systems. The full-history and plain-memory baselines may receive only the consented evaluation turns, not private application data.
+Retain no-personalization, plain-memory, strong semantic Memory/RAG, and manual-profile baselines from Task 6; add full-history. Keep the same backbone model, token/retrieval budget, and generation settings across compared systems. Baselines may receive only the consented evaluation turns, not private application data.
 
 **Step 3: Run candidate-quality gates with the configured Observer**
 
@@ -1173,7 +1216,7 @@ corepack pnpm --filter @companion-preference/evals test
 corepack pnpm --filter @companion-preference/evals eval:model-gate
 ```
 
-Expected: deterministic tests PASS; the explicitly configured model run produces a versioned aggregate report. Stop for user review. Do not start Task 15 if a binding threshold fails or the reference-host loop did not demonstrate core reuse.
+Expected: deterministic tests PASS; xhigh runs the sealed held-out set and the explicitly configured model run produces a versioned aggregate report containing dataset hash, model/provider, parameters, token budget, and baseline versions. Stop for user review. Do not start Task 15 if a binding threshold fails or the reference-host loop did not close.
 
 **Step 6: Commit**
 
@@ -1250,7 +1293,7 @@ Given an `output:gen-ai:chat:complete` fixture containing user message, assistan
 
 Assert that the serialized Sidecar → runtime request does not contain `composedMessage`, system prompts, contexts, tools, or arbitrary input metadata. AIRI does not identify code/terminal fragments embedded inside chat text, so the adapter must not claim reliable regex filtering. Default AIRI collection and remote outbound inference to off; the user must explicitly allow unclassified AIRI chat text, and the first AIRI PoC keeps its Observer local-only.
 
-Also assert that collection disabled causes immediate in-memory content discard: no `/v1/evidence` call, file write, analytics event, or raw-event log. A content-free `projection-status` call is still allowed so apply-only mode can verify guidance state. Document that this cannot prevent the richer AIRI event from first reaching the Sidecar process under the current protocol.
+Also assert that collection disabled causes immediate in-memory content discard: no `/v1/evidence` call, file write, analytics event, or raw-event log. The Sidecar may call only content-free `/v1/policy-decisions` and `projection-status`, carrying connection/revision/reason identifiers but no message text or event payload. Document that this cannot prevent the richer AIRI event from first reaching the Sidecar process under the current protocol.
 
 **Step 4: Define a testable AIRI transport port**
 
@@ -1275,7 +1318,9 @@ Because the 0.11.3 event has no formal session/character/user/domain contract, r
 
 **Step 6: Implement confirmed-profile projection with honest delivery state**
 
-Compute a hash over normalized Guidance plus sorted applied preference IDs. Publish when that hash or `applyEnabled` changes, and re-publish the current idempotent projection after Sidecar WebSocket reconnect, after `registry:modules:sync` reports a target Stage newly present, or after a target `extension:module:announced`. If those lifecycle signals prove unreliable in the pinned runtime, use a documented low-frequency refresh fallback. This is required because Stage reload loses its in-memory Context Registry even when the Sidecar hash is unchanged.
+Independently of incoming AIRI chat events, conditionally poll the runtime's effective-profile and connection revisions at a bounded interval (start at 2 seconds, back off while disconnected, and use ETag/304). This is how confirmation, revocation, or disabling apply produces a prompt update/tombstone even when AIRI emits no new conversation event. Tests use fake timers and prove a runtime revision change reaches `publishContext` within the bound without carrying evidence content.
+
+Compute a hash over normalized Guidance plus sorted applied preference IDs. Publish when that hash, effective-profile revision, or `applyEnabled` changes, and re-publish the current idempotent projection after Sidecar WebSocket reconnect, after `registry:modules:sync` reports a target Stage newly present, or after a target `extension:module:announced`. If those lifecycle signals prove unreliable in the pinned runtime, use a documented low-frequency Stage refresh fallback. This is required because Stage reload loses its in-memory Context Registry even when the Sidecar hash is unchanged.
 
 Render a concise `[Confirmed Companion Preferences]` block and send with the stable client identity:
 
@@ -1320,11 +1365,11 @@ With the user's local AIRI runtime running:
 **Step 9: Commit**
 
 ```bash
-git add adapters/airi
+git add adapters/airi docs/airi-protocol-spike.md pnpm-lock.yaml
 git commit -m "feat: connect governed preferences to airi"
 ```
 
-## Task 16: Add the MCP read and explicit-control surface
+## Task 16: Add an MCP read and governed-proposal surface
 
 **Files:**
 
@@ -1336,7 +1381,7 @@ git commit -m "feat: connect governed preferences to airi"
 
 **Step 1: Add the official SDK**
 
-Use `@modelcontextprotocol/sdk@1.29.0` and the shared runtime client.
+xhigh selects the current stable official MCP server package/version, pins it with the shared runtime client, and freezes a schema-dialect interoperability smoke test against the intended Codex/MCP client. Do not hand medium the previous 1.29.0 pin without this preflight.
 
 **Step 2: Write failing MCP tool tests**
 
@@ -1344,25 +1389,28 @@ Expose:
 
 ```text
 get_effective_preferences
-set_explicit_preference
 list_pending_candidates
-confirm_candidate
-reject_candidate
 explain_preference
+propose_preference_candidate
 ```
 
-Expose a read-only profile resource using a URI such as:
+Bind the MCP process to one configured `McpPrincipal`/capability containing `userId`, `companionId`, `relationshipId`, `hostId`, allowed domains, and allowed operations. Tool arguments cannot override that identity. Expose a read-only scoped resource such as:
 
 ```text
-preference://users/{userId}/profile
+preference://profiles/{userId}/{companionId}/{relationshipId}/{hostId}/{domain}
 ```
+
+Advertise and resolve only exact URIs derived from the configured principal/capability; a caller cannot enumerate or substitute path fields.
 
 Test that:
 
 - every call delegates to the canonical runtime;
 - there is no passive conversation-observation tool;
-- host and domain are mandatory for effective-profile reads;
-- MCP cannot bypass candidate confirmation;
+- principal host/domain scope is mandatory and caller-supplied identity overrides are rejected;
+- `propose_preference_candidate` records actor/provenance as `mcp-agent-proposed` and always creates a pending candidate;
+- proposal uses the canonical Task 10 route/client, action receipt, scope checks, and an idempotency key derived from principal + proposal provenance rather than a fabricated Evidence ID;
+- MCP exposes no confirm, reject, revoke, or direct-active-profile mutation in M3 because a model tool call is not proof of an explicit human action;
+- confirmation continues through Inspector or a future capability-bound human UI channel;
 - errors redact local tokens and private payloads.
 
 **Step 3: Implement stdio MCP server**
@@ -1380,7 +1428,7 @@ Expected: PASS. Then connect with an MCP inspector and verify the resource and t
 **Step 5: Commit**
 
 ```bash
-git add servers/mcp
+git add servers/mcp pnpm-lock.yaml
 git commit -m "feat: expose confirmed preferences over mcp"
 ```
 
@@ -1426,9 +1474,9 @@ Insert a companion-domain sensitive preference and a work-domain preference. Que
 
 **Step 3: Write failing deletion, reset, one-writer, and Data-page tests**
 
-Verify the Task 9 deletion graph for pending and confirmed records. Full reset must retain the process lock, close the store, remove the exact temporary database, `-wal`, and `-shm`, then recreate an empty store with no audit history. Launch two child runtimes against path aliases resolving to the same canonical database and verify the second exits before migration both during normal service and while the first Runtime is resetting.
+Verify the Task 9 deletion graph for pending and confirmed records. Full reset must retain the process lock, close the store, remove the exact temporary database, `-wal`, `-shm`, and `-journal`, then recreate an empty store with no audit history. During maintenance, both reads and mutations fail closed. Launch two child runtimes against path aliases/symlinks resolving to the same canonical database and verify the second exits before migration both during normal service and while the first Runtime is resetting.
 
-Before implementing the page, write component tests for export, evidence deletion, optional dependent preference revocation, preference revocation, exact reset confirmation, and “pause collection is not deletion.” Run the focused E2E and component tests and verify they fail for the intended missing behavior.
+Before implementing the page, write component tests for export, evidence deletion, candidate deletion, optional dependent preference revocation, preference revision/revocation, exact reset confirmation, and “pause collection is not deletion.” Run the focused E2E and component tests and verify they fail for the intended missing behavior.
 
 **Step 4: Implement the minimum Data & History page and make the tests green**
 
@@ -1462,21 +1510,28 @@ With local AIRI and the standalone runtime:
 
 **Step 7: Run the Go/No-Go review**
 
-Record:
+First record the engineering acceptance evidence:
 
 - candidate metrics versus baselines;
-- blind preference results;
 - confirmation burden;
 - cross-domain leakage results;
 - second-host core reuse findings;
 - AIRI integration gaps requiring upstream discussion.
 
-Do not proceed to Identity, Relationship, Reflection, Proactivity, sync, avatar, or robot work unless the approved gates pass.
+Passing these checks completes M4 engineering acceptance only. Before collecting human judgments, xhigh freezes the randomization, win/tie/loss rubric, exclusion/withdrawal handling, and report template. A product Go additionally requires:
+
+- the analysis unit for response preference is one participant × one pre-registered scenario pair; blinded same-model/same-budget comparison must give the Preference Engine at least 60% of non-tied valid pair wins against the strongest Memory/RAG baseline, with ties and invalid pairs reported separately;
+- 8–12 target users and at least 8 completed evaluations; withdrawals are reported rather than silently replaced, and any privacy-related withdrawal triggers review before Go;
+- candidate acceptance of at least 60%, where the numerator is accepted or edited-then-confirmed candidate groups and the denominator is every distinct group presented during completed sessions, including rejected, suppressed, dismissed, or timed-out groups;
+- unnecessary confirmation burden no higher than one presented candidate group per 20 eligible ordinary turns in the pre-registered background scenarios;
+- zero deterministic cross-domain leakage and zero severe unintended sensitive disclosure; additionally, more than 20% of completed users reporting privacy discomfort blocks Product Go pending redesign.
+
+Record sample size, assignment/randomization method, failures, and withdrawals. If the human sample has not run, mark product status `NOT_EVALUATED`, not Go. Do not proceed to Identity, Relationship, Reflection, Proactivity, sync, avatar, or robot work unless both engineering and product gates pass; otherwise stop or shrink to an Explicit Companion Profile/data-contract project.
 
 **Step 8: Commit**
 
 ```bash
-git add README.md docs tests vitest.config.ts
+git add README.md docs tests apps/inspector vitest.config.ts
 git commit -m "docs: verify the preference engine vertical slice"
 ```
 
@@ -1489,6 +1544,7 @@ corepack pnpm install --frozen-lockfile
 corepack pnpm check
 git status --short
 git log --oneline --decorate -20
+git ls-files '*.sqlite' '*.sqlite-*' '*.db' '.env' '.env.*'
 ```
 
 Expected:
@@ -1498,7 +1554,9 @@ Expected:
 - working tree is clean;
 - commit history shows one focused commit per task;
 - AIRI repository remains unchanged;
-- no real API key, raw private conversation, generated database, or runtime token is tracked.
+- the recorded AIRI baseline/final `HEAD` and `git status --short` match;
+- the tracked-artifact listing is empty except explicitly reviewed non-secret examples;
+- xhigh runs an approved secret scan and verifies no real API key, raw private conversation, generated database, or runtime token is tracked.
 
 ## Explicitly deferred work
 
