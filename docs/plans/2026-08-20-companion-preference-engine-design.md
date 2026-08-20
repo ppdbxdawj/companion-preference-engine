@@ -175,7 +175,9 @@ sessionId
 domain
 occurredAt
 sourceRef
-privacyScope
+collectionPolicy
+outboundInferencePolicy
+projectionPolicy
 schemaVersion
 ```
 
@@ -185,10 +187,14 @@ schemaVersion
 - `companionId`：跨宿主伙伴身份，不能直接使用 AIRI Character Card ID 或 Codex Session ID。
 - `relationshipId`：用户和伙伴之间的稳定关系标识；第一阶段只引用，不管理关系状态。
 - `hostId`：事件来自 AIRI、参考聊天端或其他宿主。
-- `sessionId`：宿主会话标识。
+- `sessionId`：宿主会话标识；宿主没有正式会话字段时只能使用明确配置的 sentinel，不能伪造成宿主原生 ID。
 - `domain`：第一阶段主要为 `work`，同时支持跨场景隔离测试。
 - `sourceRef`：可追踪到宿主事件并用于幂等去重。
-- `privacyScope`：控制哪些宿主和领域可以读取派生结果。
+- `collectionPolicy`：控制哪些有类型的来源可进入系统以及是否保留正文。
+- `outboundInferencePolicy`：独立控制禁用推理、仅本地推理或明确允许的远端推理。
+- `projectionPolicy`：控制哪些宿主和领域可以读取派生结果。
+
+这三层授权互不传递：允许采集不等于允许发给云端，允许推理也不等于允许投影给其他宿主。
 
 未明确绑定到同一 `userId/companionId/relationshipId` 的来源不能自动合并状态。
 
@@ -319,10 +325,10 @@ observed
 ## 10. 第一版数据流
 
 ```text
-1. 用户允许 AIRI 发送工作场景对话
+1. 用户分别允许 AIRI 采集、学习、对外推理和应用工作场景偏好
 2. AIRI Adapter 获得当前轮用户和助手消息
 3. Adapter 移除未授权字段并转换为 InteractionEvidence
-4. Runtime 幂等接收并持久化最小证据
+4. Runtime 幂等接收；采集或学习关闭时不保留正文，只记录无内容的决定原因
 5. Observer 异步生成 PreferenceCandidate
 6. Core 检查 Schema、作用域、重复、冲突和风险
 7. Inspector 展示候选、证据和反证
@@ -370,18 +376,20 @@ AIRI output:gen-ai:chat:complete
 → 下一轮对话
 ```
 
-AIRI 当前已有对话完成事件、外部 WebSocket 客户端、Context Registry 和 `context:update` 路径，因此普通对话 PoC 可行。
+AIRI 当前已有对话完成事件、外部 WebSocket 客户端、Context Registry 和 `context:update` 路径，因此普通对话 PoC 有条件可行；但必须先做协议实验，不能把 SDK 类型表面上存在的字段当作运行时已实现语义。
 
 现有风险：
 
-- 完整对话事件可能携带 system prompt、历史和内部上下文，隐私范围过大。
-- 当前事件缺少完整稳定的用户、角色和会话作用域。
+- `output:gen-ai:chat:complete` 当前是广播事件，Sidecar 通过 `onEvent` 接收；它会在 Sidecar 过滤之前携带 `composedMessage`、contexts 和 input，因此第一版只能保证 Sidecar 不转发、不落盘和不记录这些字段，不能声称 AIRI 源头隔离。
+- 当前正式事件缺少稳定的用户、角色、领域和会话作用域；PoC 只能使用配置好的单一身份、领域和 session sentinel。
+- `replace-self` 实际按稳定的事件来源 bucket 替换，而不是按 `contextId`；Sidecar 重启时必须复用稳定 Client identity。
+- 空文本只能形成 blank tombstone，不能真正删除 source bucket；SDK send 也没有 Stage/server ACK，只能在下一轮 context snapshot 或 DevTools 中验证实际应用。
 - Context 清除和 TTL 能力不足。
 - 正式 Plugin Platform 仍处于 Active Design。
 
 首个 AIRI Feature Request 应保持很窄：
 
-1. 默认关闭、需用户授权的 completed-turn 订阅。
+1. 默认关闭、需用户授权且只包含最小字段的 completed-turn 事件。
 2. 只发送当前轮原始用户文本和助手输出。
 3. 提供稳定的 `sessionId`、`turnId`、`characterId` 和用户作用域。
 4. 默认不发送 `composedMessage`、system prompt 或完整历史。
@@ -425,12 +433,13 @@ Data & History
 
 第一版实现前三项。主动行为尚未实现时明确显示不可用，不提供假开关。
 
-关闭“允许应用”时，Adapter 必须清除已注入上下文并等待宿主确认。若宿主不支持可靠清除，Inspector 必须显示潜在残留状态。
+关闭“允许应用”时，Adapter 必须停止继续注入。AIRI 第一版写入 blank tombstone，并在下一轮 context snapshot 中验证已确认文本不再出现；由于当前协议不能真正删除 bucket，也没有发送 ACK，Inspector 必须显示 `cleared-with-tombstone` 或潜在残留状态，不能显示为“已彻底清空”。
 
 ## 14. 隐私与数据治理
 
 - 自动观察默认关闭。
 - 每个宿主单独授权。
+- 采集、对外推理和投影/应用是三组独立策略。
 - 原始 Evidence、候选和 Confirmed Profile 分开存储。
 - 默认不采集代码、终端正文、密钥和完整模型输入。
 - 云端 Observer 明确显示供应商，仅发送必要片段。
@@ -438,7 +447,10 @@ Data & History
 - Profile 不默认跨领域、跨宿主可见。
 - 用户可查看、修改、撤销、导出和彻底删除所有数据。
 - 暂停观察不自动删除旧数据，删除由用户单独确认。
+- 删除单条证据时，完全依赖它的未确认候选随之删除；已确认偏好是独立的用户授权记录，默认保留但来源变为无正文 tombstone，用户可同时选择撤销。
+- 完全重置会停止 Runtime、删除数据库及 WAL/SHM，并清空无正文审计记录。
 - 未确认的候选永远不能影响宿主行为。
+- 第一阶段一个 bearer token 代表所有已认证本地客户端都受信任；宿主可见性用于防止误投影，不抵抗持有 token 的恶意本地进程。进入多用户或不可信插件场景前必须增加绑定宿主的 capability。
 
 ## 15. 错误处理
 
@@ -454,7 +466,7 @@ Data & History
 - Runtime 不在线：宿主进入无个性化模式。
 - 数据库异常：停止观察和写入，不读取不确定状态。
 - Adapter 断开：显示断开，不无限缓存原始对话。
-- Context 清除失败：显示潜在残留并停止继续注入。
+- Context 清除失败：显示潜在残留并停止继续注入；AIRI 的 blank tombstone 必须明确标记为兼容性降级，而不是成功删除 bucket。
 - 无法解析冲突：不应用冲突项，交由用户处理。
 
 ## 16. 测试与评测
