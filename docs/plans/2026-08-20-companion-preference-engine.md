@@ -6,7 +6,7 @@
 
 **Architecture:** A host-neutral TypeScript core owns schemas, candidate lifecycle, scope resolution, conflicts, privacy projections, and explanations. The earliest gate uses an in-memory repository and fake observer so the product hypothesis can fail cheaply. A later canonical local runtime owns SQLite and exposes a loopback HTTP API; Inspector, AIRI, the reference host, and MCP are clients or adapters and never own independent profile state.
 
-**Tech Stack:** Node.js 24, pnpm 10.33, TypeScript 5.9, Valibot 1.4, Vitest 4.1, better-sqlite3 13, Vue 3.5 + Vite 8, a currently secure tested Hono release, the current stable official MCP server SDK, and AIRI `@proj-airi/server-sdk` 0.11.3. Exact Hono/MCP versions are xhigh-owned preflight decisions in Tasks 10 and 16 and are frozen in `pnpm-lock.yaml` only after advisory and interoperability checks.
+**Tech Stack:** Node.js 24, pnpm 10.33, TypeScript 5.9, Valibot 1.4, Vitest 4.1, better-sqlite3 13, Vue 3.5 + Vite 8, a currently secure tested Hono release, the current stable official MCP server SDK, and AIRI `@proj-airi/server-sdk` 0.11.3. Exact Hono/MCP versions are high-tier preflight decisions in Tasks 10 and 16 and are frozen in `pnpm-lock.yaml` only after advisory and interoperability checks.
 
 ---
 
@@ -23,8 +23,8 @@
 - Bind the runtime to `127.0.0.1`, require a bearer token, and deny cross-origin requests unless explicitly allowlisted.
 - One runtime process is the sole writer for one database.
 - Treat all bearer-authenticated local clients as trusted in M1. `allowedHosts` prevents accidental projection; it is not a hostile-client security boundary until host-bound capabilities are designed.
-- Every dependency change updates and stages the root `pnpm-lock.yaml` in the same task. xhigh must recheck current advisories, runtime compatibility, and native prebuild support before freezing a version; medium may not upgrade or downgrade it.
-- Every commit step in this plan is executed by root only after an xhigh `H-verify` PASS. Medium agents return a diff and never commit, push, or open a PR.
+- Every dependency change updates and stages the root `pnpm-lock.yaml` in the same task. The high tier must recheck current advisories, runtime compatibility, and native prebuild support before freezing a version; the low tier may not upgrade or downgrade it.
+- Every commit step in this plan is executed by root only after a high-tier `H-verify` PASS. Low-tier agents return a diff and never commit, push, or open a PR.
 - Stop after each task if the expected test output does not match; diagnose before continuing.
 
 ## Target repository layout
@@ -593,7 +593,7 @@ Write failing tests proving `FakePreferenceObserver` returns only caller-supplie
 
 **Step 2: Freeze the dataset schema before prompt implementation**
 
-Each development JSONL case contains a stable ID, category, consent-safe synthetic turns, expected candidates, forbidden keys, query context, and expected guidance. Start with at least 24 reviewed development cases and a separately pre-registered held-out input set owned by xhigh:
+Each development JSONL case contains a stable ID, category, consent-safe synthetic turns, expected candidates, forbidden keys, query context, and expected guidance. Start with at least 24 reviewed development cases and a separately pre-registered held-out input set owned by the high tier:
 
 - 6 explicit or repeated work preferences;
 - 4 temporary states that must not become preferences;
@@ -601,7 +601,7 @@ Each development JSONL case contains a stable ID, category, consent-safe synthet
 - 4 ambiguous abstention cases;
 - 6 cross-domain counterfactual pairs.
 
-Do not copy the user's private conversation history. The repository may contain consent-safe held-out inputs, but held-out labels live outside the shared workspace in an xhigh-only evaluation input that is never delegated to medium. `manifest-v1.json` records counts plus SHA-256 hashes for development data, held-out inputs, and the externally held labels. The Task 7 prompt implementer receives development data only; xhigh runs held-out scoring. Once frozen, label edits require a new manifest version and a reviewed explanation of why the gold label was wrong; they may not be changed merely to improve the current prompt's score.
+Do not copy the user's private conversation history. The repository may contain consent-safe held-out inputs, but held-out labels live outside the shared workspace in a high-tier-only evaluation input that is never delegated to the low tier. `manifest-v1.json` records counts plus SHA-256 hashes for development data, held-out inputs, and the externally held labels. The Task 7 prompt implementer receives development data only; the high tier runs held-out scoring. Once frozen, label edits require a new manifest version and a reviewed explanation of why the gold label was wrong; they may not be changed merely to improve the current prompt's score.
 
 **Step 3: Write loader and metric tests red, then green**
 
@@ -907,7 +907,7 @@ git commit -m "feat: orchestrate governed preference learning"
 
 **Step 1: Freeze and add Hono dependencies**
 
-xhigh checks the current Hono advisory history and Node adapter compatibility, then freezes an exact tested version not lower than the known 4.12.7 security fix line plus a compatible `@hono/node-server`. Record the decision in the lockfile; medium may not change it.
+The high tier checks the current Hono advisory history and Node adapter compatibility, then freezes an exact tested version not lower than the known 4.12.7 security fix line plus a compatible `@hono/node-server`. Record the decision in the lockfile; the low tier may not change it.
 
 **Step 2: Write failing API security tests**
 
@@ -1188,7 +1188,7 @@ Grow the 24-case M0 set to at least 60 synthetic, consented, or anonymized cases
 
 Add a separate sequential background set of at least 100 ordinary work turns with no gold preference change. It measures unnecessary confirmation burden without being distorted by the deliberately preference-heavy 60-case quality set.
 
-Xhigh expands the external held-out labels without placing them in the shared workspace, then creates `manifest-v2.json` with new immutable counts and hashes; `manifest-v1.json` is never rewritten. Any correction to an existing gold label requires another manifest version and reviewed reason. Never insert the user's private conversation history.
+The high tier expands the external held-out labels without placing them in the shared workspace, then creates `manifest-v2.json` with new immutable counts and hashes; `manifest-v1.json` is never rewritten. Any correction to an existing gold label requires another manifest version and reviewed reason. Never insert the user's private conversation history.
 
 **Step 2: Complete the baseline matrix**
 
@@ -1216,7 +1216,7 @@ corepack pnpm --filter @companion-preference/evals test
 corepack pnpm --filter @companion-preference/evals eval:model-gate
 ```
 
-Expected: deterministic tests PASS; xhigh runs the sealed held-out set and the explicitly configured model run produces a versioned aggregate report containing dataset hash, model/provider, parameters, token budget, and baseline versions. Stop for user review. Do not start Task 15 if a binding threshold fails or the reference-host loop did not close.
+Expected: deterministic tests PASS; the high tier runs the sealed held-out set and the explicitly configured model run produces a versioned aggregate report containing dataset hash, model/provider, parameters, token budget, and baseline versions. Stop for user review. Do not start Task 15 if a binding threshold fails or the reference-host loop did not close.
 
 **Step 6: Commit**
 
@@ -1381,7 +1381,7 @@ git commit -m "feat: connect governed preferences to airi"
 
 **Step 1: Add the official SDK**
 
-xhigh selects the current stable official MCP server package/version, pins it with the shared runtime client, and freezes a schema-dialect interoperability smoke test against the intended Codex/MCP client. Do not hand medium the previous 1.29.0 pin without this preflight.
+The high tier selects the current stable official MCP server package/version, pins it with the shared runtime client, and freezes a schema-dialect interoperability smoke test against the intended Codex/MCP client. Do not hand the low tier the previous 1.29.0 pin without this preflight.
 
 **Step 2: Write failing MCP tool tests**
 
@@ -1518,7 +1518,7 @@ First record the engineering acceptance evidence:
 - second-host core reuse findings;
 - AIRI integration gaps requiring upstream discussion.
 
-Passing these checks completes M4 engineering acceptance only. Before collecting human judgments, xhigh freezes the randomization, win/tie/loss rubric, exclusion/withdrawal handling, and report template. A product Go additionally requires:
+Passing these checks completes M4 engineering acceptance only. Before collecting human judgments, the high tier freezes the randomization, win/tie/loss rubric, exclusion/withdrawal handling, and report template. A product Go additionally requires:
 
 - the analysis unit for response preference is one participant × one pre-registered scenario pair; blinded same-model/same-budget comparison must give the Preference Engine at least 60% of non-tied valid pair wins against the strongest Memory/RAG baseline, with ties and invalid pairs reported separately;
 - 8–12 target users and at least 8 completed evaluations; withdrawals are reported rather than silently replaced, and any privacy-related withdrawal triggers review before Go;
@@ -1556,7 +1556,7 @@ Expected:
 - AIRI repository remains unchanged;
 - the recorded AIRI baseline/final `HEAD` and `git status --short` match;
 - the tracked-artifact listing is empty except explicitly reviewed non-secret examples;
-- xhigh runs an approved secret scan and verifies no real API key, raw private conversation, generated database, or runtime token is tracked.
+- the high tier runs an approved secret scan and verifies no real API key, raw private conversation, generated database, or runtime token is tracked.
 
 ## Explicitly deferred work
 
