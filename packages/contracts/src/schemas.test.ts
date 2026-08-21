@@ -65,6 +65,12 @@ import {
   ContentFreePolicyOutcomeSchema,
   ContentFreePolicyReasonCodeSchema,
   ContentFreePolicyStageSchema,
+  AuditActorSchema,
+  AuditEntityReferenceSchema,
+  AuditEventKindSchema,
+  AuditEventSchema,
+  AuditQuerySchema,
+  AuditReasonCodeSchema,
   ConfirmCandidateCommandSchema,
   CreateExplicitPreferenceCommandSchema,
   DeleteCandidateCommandSchema,
@@ -73,6 +79,9 @@ import {
   GovernanceMutationKindSchema,
   MutationReceiptResultSchema,
   MutationReceiptSchema,
+  McpCapabilitySchema,
+  McpOperationSchema,
+  McpPrincipalSchema,
   ObserverEvidenceProvenanceSchema,
   PendingCandidateProposalSchema,
   PreferenceAuthoritySchema,
@@ -94,6 +103,12 @@ import {
   SuppressCandidateCommandSchema,
   UpdateConnectionSettingsCommandSchema,
   type AdapterConnectionState,
+  type AuditActor,
+  type AuditEntityReference,
+  type AuditEvent,
+  type AuditEventKind,
+  type AuditQuery,
+  type AuditReasonCode,
   type AdapterProjectionStatus,
   type BehaviorGuidance,
   type CandidateIdempotencyKey,
@@ -112,6 +127,9 @@ import {
   type GovernanceMutationKind,
   type MutationReceipt,
   type MutationReceiptResult,
+  type McpCapability,
+  type McpOperation,
+  type McpPrincipal,
   type ObserverEvidenceProvenance,
   type PendingCandidateProposal,
   type Preference,
@@ -135,6 +153,8 @@ import {
 } from './schemas.js'
 import {
   activePreferenceRecordFixture,
+  auditEventFixture,
+  auditQueryFixture,
   adapterProjectionStatusFixture,
   behaviorGuidanceFixture,
   candidateIdempotencyKeyFixture,
@@ -146,6 +166,8 @@ import {
   effectiveProfileQueryFixture,
   externalProposalProvenanceFixture,
   mutationReceiptFixture,
+  mcpPrincipalFixture,
+  observerCandidateProposedAuditEventFixture,
   observerEvidenceProvenanceFixture,
   pendingCandidateProposalFixture,
   preferenceCandidateFixture,
@@ -2213,5 +2235,268 @@ describe('T2C2A content-free policy decision oracles', () => {
       ...contentFreePolicyDecisionFixture,
       ...input,
     }).success).toBe(false)
+  })
+})
+
+describe('T2C2B MCP principal and capability contracts', () => {
+  it('freezes the configured principal and closed pending-only operations', () => {
+    expectTypeOf<McpOperation>().toEqualTypeOf<
+      | 'read-effective-profile'
+      | 'explain-preference'
+      | 'list-pending-candidates'
+      | 'propose-pending-candidate'
+    >()
+    expectTypeOf<McpCapability>().toEqualTypeOf<{
+      allowedDomains: Domain[]
+      allowedOperations: McpOperation[]
+    }>()
+    expectTypeOf<McpPrincipal>().toEqualTypeOf<{
+      schemaVersion: 1
+      principalId: string
+      identity: PreferenceIdentity
+      hostId: string
+      capability: McpCapability
+    }>()
+    expectTypeOf<v.InferOutput<typeof McpPrincipalSchema>>().toEqualTypeOf<McpPrincipal>()
+  })
+
+  it('accepts the frozen principal but rejects spoofing fields and forbidden operations', () => {
+    expect(v.parse(McpPrincipalSchema, mcpPrincipalFixture)).toEqual(mcpPrincipalFixture)
+    for (const operation of ['confirm-candidate', 'reject-candidate', 'revoke-preference', 'activate-preference', 'observe-turns']) {
+      expect(v.safeParse(McpOperationSchema, operation).success).toBe(false)
+    }
+    for (const forbidden of [
+      { userId: 'override' }, { companionId: 'override' }, { relationshipId: 'override' },
+      { allowedHosts: ['other-host'] }, { allowedDomains: ['companion'] },
+      { learningPayload: { userText: 'private' } }, { composedMessage: 'private' },
+    ]) expect(v.safeParse(McpPrincipalSchema, { ...mcpPrincipalFixture, ...forbidden }).success).toBe(false)
+  })
+
+  it('requires non-empty fixed identity/host and non-empty duplicate-free capability lists', () => {
+    for (const input of [
+      { ...mcpPrincipalFixture, principalId: '' },
+      { ...mcpPrincipalFixture, hostId: '' },
+      { ...mcpPrincipalFixture, identity: { ...mcpPrincipalFixture.identity, userId: '' } },
+      { ...mcpPrincipalFixture, capability: { ...mcpPrincipalFixture.capability, allowedDomains: [] } },
+      { ...mcpPrincipalFixture, capability: { ...mcpPrincipalFixture.capability, allowedOperations: [] } },
+      { ...mcpPrincipalFixture, capability: { ...mcpPrincipalFixture.capability, allowedDomains: ['work', 'work'] } },
+      { ...mcpPrincipalFixture, capability: { ...mcpPrincipalFixture.capability, allowedOperations: ['read-effective-profile', 'read-effective-profile'] } },
+    ]) expect(v.safeParse(McpPrincipalSchema, input).success).toBe(false)
+  })
+})
+
+describe('T2C2B content-free audit contracts', () => {
+  it('freezes closed actors, kinds, reason codes, entity references, event, and query', () => {
+    expectTypeOf<v.InferOutput<typeof AuditActorSchema>>().toEqualTypeOf<AuditActor>()
+    expectTypeOf<v.InferOutput<typeof AuditEventKindSchema>>().toEqualTypeOf<AuditEventKind>()
+    expectTypeOf<v.InferOutput<typeof AuditReasonCodeSchema>>().toEqualTypeOf<AuditReasonCode>()
+    expectTypeOf<v.InferOutput<typeof AuditEntityReferenceSchema>>().toEqualTypeOf<AuditEntityReference>()
+    expectTypeOf<v.InferOutput<typeof AuditEventSchema>>().toEqualTypeOf<AuditEvent>()
+    expectTypeOf<v.InferOutput<typeof AuditQuerySchema>>().toEqualTypeOf<AuditQuery>()
+  })
+
+  it('accepts frozen content-free event/query fixtures and rejects open enums', () => {
+    expect(v.parse(AuditEventSchema, auditEventFixture)).toEqual(auditEventFixture)
+    expect(v.parse(AuditEventSchema, observerCandidateProposedAuditEventFixture)).toEqual(observerCandidateProposedAuditEventFixture)
+    expect(v.parse(AuditQuerySchema, auditQueryFixture)).toEqual(auditQueryFixture)
+    for (const [schema, value] of [[AuditActorSchema, 'admin'], [AuditEventKindSchema, 'message-recorded'], [AuditReasonCodeSchema, 'custom']] as const) {
+      expect(v.safeParse(schema, value).success).toBe(false)
+    }
+  })
+
+  it('rejects raw content, secrets, transport bodies, tokens, tools, and unknown fields', () => {
+    const forbidden = ['conversation', 'evidencePayload', 'learningPayload', 'systemPrompt', 'toolTrace', 'token', 'requestBody', 'responseBody']
+    for (const field of forbidden) {
+      expect(v.safeParse(AuditEventSchema, { ...auditEventFixture, [field]: 'private' }).success).toBe(false)
+      expect(v.safeParse(AuditQuerySchema, { ...auditQueryFixture, [field]: 'private' }).success).toBe(false)
+    }
+  })
+
+  it('requires strict identifiers, timestamps, revisions, action IDs, query bounds, and matching entities', () => {
+    for (const input of [
+      { ...auditEventFixture, id: '' },
+      { ...auditEventFixture, occurredAt: 'not-a-time' },
+      { ...auditEventFixture, actionId: '' },
+      { ...auditEventFixture, revision: -1 },
+      { ...auditEventFixture, revision: 1.5 },
+      { ...auditEventFixture, kind: 'candidate-proposed', entity: { kind: 'preference', preferenceId: 'preference-1' } },
+    ]) expect(v.safeParse(AuditEventSchema, input).success).toBe(false)
+    for (const input of [
+      { ...auditQueryFixture, limit: 0 },
+      { ...auditQueryFixture, limit: 1001 },
+      { ...auditQueryFixture, limit: 1.5 },
+      { ...auditQueryFixture, occurredAtOrAfter: 'not-a-time' },
+      { ...auditQueryFixture, occurredBefore: '2026-08-20T00:00:00Z' },
+      { ...auditQueryFixture, actors: [] },
+      { ...auditQueryFixture, kinds: [] },
+    ]) expect(v.safeParse(AuditQuerySchema, input).success).toBe(false)
+  })
+
+  it('accepts the complete frozen kind/entity/reason matrix', () => {
+    const accepted = [
+      ['adapter', 'evidence-ingested', 'evidence', 'accepted'],
+      ['adapter', 'evidence-ingested', 'evidence', 'duplicate'],
+      ['observer', 'evidence-processing-completed', 'evidence', 'accepted'],
+      ['observer', 'evidence-processing-completed', 'evidence', 'stale-settings-revision'],
+      ['observer', 'evidence-processing-completed', 'evidence', 'late-result-discarded'],
+      ['user', 'evidence-deleted', 'evidence', 'user-requested'],
+      ['observer', 'processing-failed', 'evidence', 'invalid-observer-output'],
+      ['runtime', 'processing-failed', 'evidence', 'retry-exhausted'],
+      ['observer', 'candidate-proposed', 'candidate', 'accepted'],
+      ['mcp-agent', 'candidate-proposed', 'candidate', 'accepted'],
+      ['user', 'candidate-proposed', 'candidate', 'duplicate'],
+      ['user', 'candidate-confirmed', 'candidate', 'accepted'],
+      ['user', 'candidate-rejected', 'candidate', 'not-a-preference'],
+      ['user', 'candidate-rejected', 'candidate', 'user-requested'],
+      ['user', 'candidate-deleted', 'candidate', 'user-requested'],
+      ['user', 'candidate-suppressed', 'candidate', 'do-not-suggest-again'],
+      ['user', 'preference-created', 'preference', 'accepted'],
+      ['user', 'preference-revised', 'preference', 'superseded'],
+      ['user', 'preference-revoked', 'preference', 'user-requested'],
+      ['user', 'connection-settings-updated', 'connection', 'accepted'],
+      ['adapter', 'projection-status-reported', 'connection', 'accepted'],
+      ['adapter', 'projection-status-reported', 'connection', 'transport-write-failed'],
+      ['adapter', 'projection-status-reported', 'connection', 'verification-failed'],
+      ['adapter', 'projection-status-reported', 'connection', 'transport-disconnected'],
+      ['adapter', 'projection-status-reported', 'connection', 'runtime-unavailable'],
+      ['adapter', 'policy-decision-recorded', 'policy-decision', 'observe-disabled'],
+      ['runtime', 'policy-decision-recorded', 'policy-decision', 'collection-disabled'],
+      ['runtime', 'policy-decision-recorded', 'policy-decision', 'learning-disabled'],
+      ['runtime', 'policy-decision-recorded', 'policy-decision', 'outbound-inference-disabled'],
+      ['runtime', 'policy-decision-recorded', 'policy-decision', 'outbound-source-not-allowed'],
+      ['adapter', 'policy-decision-recorded', 'policy-decision', 'projection-disabled'],
+      ['adapter', 'policy-decision-recorded', 'policy-decision', 'projection-scope-not-allowed'],
+      ['runtime', 'policy-decision-recorded', 'policy-decision', 'stale-settings-revision'],
+      ['runtime', 'policy-decision-recorded', 'policy-decision', 'late-result-discarded'],
+    ] as const
+
+    const entities = {
+      evidence: { kind: 'evidence', evidenceId: 'evidence-1' },
+      candidate: { kind: 'candidate', candidateId: 'candidate-1' },
+      preference: { kind: 'preference', preferenceId: 'preference-1' },
+      connection: { kind: 'connection', hostId: 'reference-host' },
+      'policy-decision': { kind: 'policy-decision', decisionId: 'decision-1' },
+    } as const
+
+    for (const [actor, kind, entityKind, reasonCode] of accepted) {
+      const event: Record<string, unknown> = {
+        ...auditEventFixture,
+        actor,
+        kind,
+        entity: entities[entityKind],
+        reasonCode,
+      }
+      delete event.actionId
+      delete event.revision
+      delete event.settingsRevision
+      if (kind.startsWith('candidate-') || kind.startsWith('preference-')) event.revision = 1
+      if (kind === 'evidence-processing-completed' || kind === 'processing-failed' || kind === 'connection-settings-updated' || kind === 'projection-status-reported' || kind === 'policy-decision-recorded') event.settingsRevision = 1
+      if (kind === 'evidence-deleted' || (kind.startsWith('candidate-') && actor !== 'observer') || kind.startsWith('preference-') || kind === 'connection-settings-updated' || kind === 'projection-status-reported') event.actionId = 'action-1'
+      expect(v.safeParse(AuditEventSchema, event).success).toBe(true)
+    }
+  })
+
+  it('rejects wrong entity and reason combinations for every event group', () => {
+    const rejected = [
+      ['evidence-ingested', { kind: 'candidate', candidateId: 'candidate-1' }, 'accepted'],
+      ['evidence-processing-completed', { kind: 'preference', preferenceId: 'preference-1' }, 'accepted'],
+      ['evidence-deleted', { kind: 'connection', hostId: 'host-1' }, 'user-requested'],
+      ['processing-failed', { kind: 'policy-decision', decisionId: 'decision-1' }, 'retry-exhausted'],
+      ['candidate-proposed', { kind: 'evidence', evidenceId: 'evidence-1' }, 'accepted'],
+      ['candidate-confirmed', { kind: 'candidate', candidateId: 'candidate-1' }, 'collection-disabled'],
+      ['candidate-rejected', { kind: 'candidate', candidateId: 'candidate-1' }, 'accepted'],
+      ['candidate-deleted', { kind: 'candidate', candidateId: 'candidate-1' }, 'duplicate'],
+      ['candidate-suppressed', { kind: 'candidate', candidateId: 'candidate-1' }, 'user-requested'],
+      ['preference-created', { kind: 'candidate', candidateId: 'candidate-1' }, 'accepted'],
+      ['preference-revised', { kind: 'preference', preferenceId: 'preference-1' }, 'accepted'],
+      ['preference-revoked', { kind: 'preference', preferenceId: 'preference-1' }, 'superseded'],
+      ['connection-settings-updated', { kind: 'preference', preferenceId: 'preference-1' }, 'accepted'],
+      ['projection-status-reported', { kind: 'connection', hostId: 'host-1' }, 'collection-disabled'],
+      ['policy-decision-recorded', { kind: 'policy-decision', decisionId: 'decision-1' }, 'accepted'],
+    ] as const
+    for (const [kind, entity, reasonCode] of rejected) {
+      expect(v.safeParse(AuditEventSchema, {
+        ...auditEventFixture,
+        kind,
+        entity,
+        reasonCode,
+      }).success).toBe(false)
+    }
+  })
+
+  it('rejects a wrong causal actor for every event kind', () => {
+    const base = {
+      schemaVersion: 1,
+      id: 'audit-actor-probe',
+      identity: preferenceIdentityFixture,
+      occurredAt: '2026-08-21T03:25:00Z',
+    } as const
+    const wrongActorEvents = [
+      { ...base, actor: 'user', kind: 'evidence-ingested', reasonCode: 'accepted', entity: { kind: 'evidence', evidenceId: 'e-1' } },
+      { ...base, actor: 'adapter', kind: 'evidence-processing-completed', reasonCode: 'accepted', entity: { kind: 'evidence', evidenceId: 'e-1' }, settingsRevision: 1 },
+      { ...base, actor: 'runtime', kind: 'evidence-deleted', reasonCode: 'user-requested', entity: { kind: 'evidence', evidenceId: 'e-1' }, actionId: 'a-1' },
+      { ...base, actor: 'adapter', kind: 'processing-failed', reasonCode: 'retry-exhausted', entity: { kind: 'evidence', evidenceId: 'e-1' }, settingsRevision: 1 },
+      { ...base, actor: 'adapter', kind: 'candidate-proposed', reasonCode: 'accepted', entity: { kind: 'candidate', candidateId: 'c-1' }, revision: 0 },
+      { ...base, actor: 'mcp-agent', kind: 'candidate-confirmed', reasonCode: 'accepted', entity: { kind: 'candidate', candidateId: 'c-1' }, actionId: 'a-1', revision: 1 },
+      { ...base, actor: 'observer', kind: 'candidate-rejected', reasonCode: 'not-a-preference', entity: { kind: 'candidate', candidateId: 'c-1' }, actionId: 'a-1', revision: 1 },
+      { ...base, actor: 'runtime', kind: 'candidate-deleted', reasonCode: 'user-requested', entity: { kind: 'candidate', candidateId: 'c-1' }, actionId: 'a-1', revision: 1 },
+      { ...base, actor: 'adapter', kind: 'candidate-suppressed', reasonCode: 'do-not-suggest-again', entity: { kind: 'candidate', candidateId: 'c-1' }, actionId: 'a-1', revision: 1 },
+      { ...base, actor: 'observer', kind: 'preference-created', reasonCode: 'accepted', entity: { kind: 'preference', preferenceId: 'p-1' }, actionId: 'a-1', revision: 1 },
+      { ...base, actor: 'runtime', kind: 'preference-revised', reasonCode: 'superseded', entity: { kind: 'preference', preferenceId: 'p-1' }, actionId: 'a-1', revision: 2 },
+      { ...base, actor: 'mcp-agent', kind: 'preference-revoked', reasonCode: 'user-requested', entity: { kind: 'preference', preferenceId: 'p-1' }, actionId: 'a-1', revision: 2 },
+      { ...base, actor: 'adapter', kind: 'connection-settings-updated', reasonCode: 'accepted', entity: { kind: 'connection', hostId: 'h-1' }, actionId: 'a-1', settingsRevision: 2 },
+      { ...base, actor: 'user', kind: 'projection-status-reported', reasonCode: 'accepted', entity: { kind: 'connection', hostId: 'h-1' }, actionId: 'a-1', settingsRevision: 2 },
+      { ...base, actor: 'user', kind: 'policy-decision-recorded', reasonCode: 'collection-disabled', entity: { kind: 'policy-decision', decisionId: 'd-1' }, settingsRevision: 2 },
+    ]
+    for (const input of wrongActorEvents) expect(v.safeParse(AuditEventSchema, input).success).toBe(false)
+  })
+
+  it('requires only the action and revision fences appropriate to each event', () => {
+    for (const input of [
+      { ...auditEventFixture, actionId: undefined },
+      { ...auditEventFixture, revision: undefined },
+      { ...observerCandidateProposedAuditEventFixture, actionId: 'not-allowed' },
+      { ...auditEventFixture, actor: 'mcp-agent', actionId: undefined },
+      {
+        schemaVersion: 1,
+        id: 'audit-ingest-extra-fence',
+        identity: preferenceIdentityFixture,
+        actor: 'adapter',
+        kind: 'evidence-ingested',
+        reasonCode: 'accepted',
+        entity: { kind: 'evidence', evidenceId: 'evidence-1' },
+        occurredAt: '2026-08-21T03:25:00Z',
+        actionId: 'not-allowed',
+      },
+      {
+        schemaVersion: 1,
+        id: 'audit-processing-1',
+        identity: preferenceIdentityFixture,
+        actor: 'observer',
+        kind: 'evidence-processing-completed',
+        reasonCode: 'accepted',
+        entity: { kind: 'evidence', evidenceId: 'evidence-1' },
+        occurredAt: '2026-08-21T03:25:00Z',
+      },
+      {
+        ...auditEventFixture,
+        actor: 'user',
+        kind: 'connection-settings-updated',
+        entity: { kind: 'connection', hostId: 'reference-host' },
+        reasonCode: 'accepted',
+        revision: undefined,
+        settingsRevision: undefined,
+      },
+      {
+        ...auditEventFixture,
+        actor: 'runtime',
+        kind: 'policy-decision-recorded',
+        entity: { kind: 'policy-decision', decisionId: 'decision-1' },
+        reasonCode: 'collection-disabled',
+        actionId: undefined,
+        revision: undefined,
+        settingsRevision: undefined,
+      },
+    ]) expect(v.safeParse(AuditEventSchema, input).success).toBe(false)
   })
 })

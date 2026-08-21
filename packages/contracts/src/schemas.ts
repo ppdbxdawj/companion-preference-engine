@@ -668,6 +668,234 @@ export type ContentFreePolicyDecision = {
   occurredAt: string
 }
 
+export type McpOperation =
+  | 'read-effective-profile'
+  | 'explain-preference'
+  | 'list-pending-candidates'
+  | 'propose-pending-candidate'
+
+export type McpCapability = {
+  allowedDomains: Domain[]
+  allowedOperations: McpOperation[]
+}
+
+/** Configured by the MCP process; never accepted from tool arguments. */
+export type McpPrincipal = {
+  schemaVersion: 1
+  principalId: string
+  identity: PreferenceIdentity
+  hostId: string
+  capability: McpCapability
+}
+
+/** Causal initiator of a transition; never merely the audit-row writer. */
+export type AuditActor =
+  | 'user'
+  | 'observer'
+  | 'runtime'
+  | 'adapter'
+  | 'mcp-agent'
+
+export type AuditEventKind =
+  | 'evidence-ingested'
+  | 'evidence-processing-completed'
+  | 'evidence-deleted'
+  | 'candidate-proposed'
+  | 'candidate-confirmed'
+  | 'candidate-rejected'
+  | 'candidate-deleted'
+  | 'candidate-suppressed'
+  | 'preference-created'
+  | 'preference-revised'
+  | 'preference-revoked'
+  | 'connection-settings-updated'
+  | 'projection-status-reported'
+  | 'policy-decision-recorded'
+  | 'processing-failed'
+
+export type AuditReasonCode =
+  | 'accepted'
+  | 'duplicate'
+  | 'user-requested'
+  | 'not-a-preference'
+  | 'do-not-suggest-again'
+  | 'superseded'
+  | 'observe-disabled'
+  | 'collection-disabled'
+  | 'learning-disabled'
+  | 'outbound-inference-disabled'
+  | 'outbound-source-not-allowed'
+  | 'projection-disabled'
+  | 'projection-scope-not-allowed'
+  | 'stale-settings-revision'
+  | 'late-result-discarded'
+  | 'invalid-observer-output'
+  | 'retry-exhausted'
+  | 'transport-write-failed'
+  | 'verification-failed'
+  | 'transport-disconnected'
+  | 'runtime-unavailable'
+
+export type AuditEntityReference =
+  | { kind: 'evidence'; evidenceId: string }
+  | { kind: 'candidate'; candidateId: string }
+  | { kind: 'preference'; preferenceId: string }
+  | { kind: 'connection'; hostId: string }
+  | { kind: 'policy-decision'; decisionId: string }
+
+type AuditEventBase = {
+  schemaVersion: 1
+  id: string
+  identity: PreferenceIdentity
+  actor: AuditActor
+  occurredAt: string
+}
+
+/**
+ * `actor` is the causal initiator of the transition, not the Runtime process
+ * that persists the audit row. The union is append-only, content-free, and
+ * closed over valid actor/kind/entity/reason/fence combinations.
+ */
+export type AuditEvent = AuditEventBase &
+  (
+    | {
+        actor: 'adapter'
+        kind: 'evidence-ingested'
+        reasonCode: 'accepted' | 'duplicate'
+        entity: Extract<AuditEntityReference, { kind: 'evidence' }>
+      }
+    | {
+        actor: 'observer'
+        kind: 'evidence-processing-completed'
+        reasonCode: 'accepted' | 'stale-settings-revision' | 'late-result-discarded'
+        entity: Extract<AuditEntityReference, { kind: 'evidence' }>
+        settingsRevision: number
+      }
+    | {
+        actor: 'user'
+        kind: 'evidence-deleted'
+        reasonCode: 'user-requested'
+        entity: Extract<AuditEntityReference, { kind: 'evidence' }>
+        actionId: string
+      }
+    | {
+        actor: 'observer' | 'runtime'
+        kind: 'processing-failed'
+        reasonCode: 'invalid-observer-output' | 'retry-exhausted'
+        entity: Extract<AuditEntityReference, { kind: 'evidence' }>
+        settingsRevision: number
+      }
+    | {
+        actor: 'observer'
+        kind: 'candidate-proposed'
+        reasonCode: 'accepted' | 'duplicate'
+        entity: Extract<AuditEntityReference, { kind: 'candidate' }>
+        revision: number
+      }
+    | {
+        actor: 'mcp-agent' | 'user'
+        kind: 'candidate-proposed'
+        reasonCode: 'accepted' | 'duplicate'
+        entity: Extract<AuditEntityReference, { kind: 'candidate' }>
+        actionId: string
+        revision: number
+      }
+    | {
+        actor: 'user'
+        kind: 'candidate-confirmed'
+        reasonCode: 'accepted'
+        entity: Extract<AuditEntityReference, { kind: 'candidate' }>
+        actionId: string
+        revision: number
+      }
+    | {
+        actor: 'user'
+        kind: 'candidate-rejected'
+        reasonCode: 'not-a-preference' | 'user-requested'
+        entity: Extract<AuditEntityReference, { kind: 'candidate' }>
+        actionId: string
+        revision: number
+      }
+    | {
+        actor: 'user'
+        kind: 'candidate-deleted'
+        reasonCode: 'user-requested'
+        entity: Extract<AuditEntityReference, { kind: 'candidate' }>
+        actionId: string
+        revision: number
+      }
+    | {
+        actor: 'user'
+        kind: 'candidate-suppressed'
+        reasonCode: 'do-not-suggest-again'
+        entity: Extract<AuditEntityReference, { kind: 'candidate' }>
+        actionId: string
+        revision: number
+      }
+    | {
+        actor: 'user'
+        kind: 'preference-created'
+        reasonCode: 'accepted'
+        entity: Extract<AuditEntityReference, { kind: 'preference' }>
+        actionId: string
+        revision: number
+      }
+    | {
+        actor: 'user'
+        kind: 'preference-revised'
+        reasonCode: 'superseded'
+        entity: Extract<AuditEntityReference, { kind: 'preference' }>
+        actionId: string
+        revision: number
+      }
+    | {
+        actor: 'user'
+        kind: 'preference-revoked'
+        reasonCode: 'user-requested'
+        entity: Extract<AuditEntityReference, { kind: 'preference' }>
+        actionId: string
+        revision: number
+      }
+    | {
+        actor: 'user'
+        kind: 'connection-settings-updated'
+        reasonCode: 'accepted'
+        entity: Extract<AuditEntityReference, { kind: 'connection' }>
+        actionId: string
+        settingsRevision: number
+      }
+    | {
+        actor: 'adapter'
+        kind: 'projection-status-reported'
+        reasonCode:
+          | 'accepted'
+          | 'transport-write-failed'
+          | 'verification-failed'
+          | 'transport-disconnected'
+          | 'runtime-unavailable'
+        entity: Extract<AuditEntityReference, { kind: 'connection' }>
+        actionId: string
+        settingsRevision: number
+      }
+    | {
+        actor: 'adapter' | 'runtime'
+        kind: 'policy-decision-recorded'
+        reasonCode: ContentFreePolicyReasonCode
+        entity: Extract<AuditEntityReference, { kind: 'policy-decision' }>
+        settingsRevision: number
+      }
+  )
+
+export type AuditQuery = {
+  identity: PreferenceIdentity
+  actors?: AuditActor[]
+  kinds?: AuditEventKind[]
+  entity?: AuditEntityReference
+  occurredAtOrAfter?: string
+  occurredBefore?: string
+  limit?: number
+}
+
 // TODO(T2C1): replace only these compile-valid permissive schema bodies. The
 // public types and behavioral RED oracles are owned and frozen by the high tier.
 const id = v.pipe(v.string(), v.nonEmpty())
@@ -1000,3 +1228,318 @@ export const ContentFreePolicyDecisionSchema = v.union([
     occurredAt: iso,
   }),
 ]) as v.GenericSchema<ContentFreePolicyDecision>
+
+// TODO(T2C2B): Spark replaces only the schema bodies in this region. Public
+// types, fixtures, and strict RED oracles are frozen by the high tier.
+export const McpOperationSchema = v.picklist([
+  'read-effective-profile',
+  'explain-preference',
+  'list-pending-candidates',
+  'propose-pending-candidate',
+]) as v.GenericSchema<McpOperation>
+
+const uniqueValues = <T>(values: T[]) => new Set(values).size === values.length
+
+export const McpCapabilitySchema = v.pipe(
+  v.strictObject({
+    allowedDomains: v.pipe(
+      v.array(DomainSchema),
+      v.minLength(1),
+      v.check(uniqueValues),
+    ),
+    allowedOperations: v.pipe(
+      v.array(McpOperationSchema),
+      v.minLength(1),
+      v.check(uniqueValues),
+    ),
+  }),
+) as v.GenericSchema<McpCapability>
+
+export const McpPrincipalSchema = v.strictObject({
+  schemaVersion: v.literal(1),
+  principalId: id,
+  identity: PreferenceIdentitySchema,
+  hostId: id,
+  capability: McpCapabilitySchema,
+}) as v.GenericSchema<McpPrincipal>
+
+export const AuditActorSchema = v.picklist([
+  'user',
+  'observer',
+  'runtime',
+  'adapter',
+  'mcp-agent',
+]) as v.GenericSchema<AuditActor>
+
+export const AuditEventKindSchema = v.picklist([
+  'evidence-ingested',
+  'evidence-processing-completed',
+  'evidence-deleted',
+  'candidate-proposed',
+  'candidate-confirmed',
+  'candidate-rejected',
+  'candidate-deleted',
+  'candidate-suppressed',
+  'preference-created',
+  'preference-revised',
+  'preference-revoked',
+  'connection-settings-updated',
+  'projection-status-reported',
+  'policy-decision-recorded',
+  'processing-failed',
+]) as v.GenericSchema<AuditEventKind>
+
+export const AuditReasonCodeSchema = v.picklist([
+  'accepted',
+  'duplicate',
+  'user-requested',
+  'not-a-preference',
+  'do-not-suggest-again',
+  'superseded',
+  'observe-disabled',
+  'collection-disabled',
+  'learning-disabled',
+  'outbound-inference-disabled',
+  'outbound-source-not-allowed',
+  'projection-disabled',
+  'projection-scope-not-allowed',
+  'stale-settings-revision',
+  'late-result-discarded',
+  'invalid-observer-output',
+  'retry-exhausted',
+  'transport-write-failed',
+  'verification-failed',
+  'transport-disconnected',
+  'runtime-unavailable',
+]) as v.GenericSchema<AuditReasonCode>
+
+export const AuditEntityReferenceSchema = v.variant('kind', [
+  v.strictObject({ kind: v.literal('evidence'), evidenceId: id }),
+  v.strictObject({ kind: v.literal('candidate'), candidateId: id }),
+  v.strictObject({ kind: v.literal('preference'), preferenceId: id }),
+  v.strictObject({ kind: v.literal('connection'), hostId: id }),
+  v.strictObject({ kind: v.literal('policy-decision'), decisionId: id }),
+]) as unknown as v.GenericSchema<AuditEntityReference>
+
+export const AuditEventSchema = v.union([
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.literal('adapter'),
+    occurredAt: iso,
+    kind: v.literal('evidence-ingested'),
+    reasonCode: v.picklist(['accepted', 'duplicate']),
+    entity: v.strictObject({ kind: v.literal('evidence'), evidenceId: id }),
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.literal('observer'),
+    occurredAt: iso,
+    kind: v.literal('evidence-processing-completed'),
+    reasonCode: v.picklist(['accepted', 'stale-settings-revision', 'late-result-discarded']),
+    entity: v.strictObject({ kind: v.literal('evidence'), evidenceId: id }),
+    settingsRevision: rev0,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.literal('user'),
+    occurredAt: iso,
+    kind: v.literal('evidence-deleted'),
+    reasonCode: v.literal('user-requested'),
+    entity: v.strictObject({ kind: v.literal('evidence'), evidenceId: id }),
+    actionId: id,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.union([v.literal('observer'), v.literal('runtime')]),
+    occurredAt: iso,
+    kind: v.literal('processing-failed'),
+    reasonCode: v.picklist(['invalid-observer-output', 'retry-exhausted']),
+    entity: v.strictObject({ kind: v.literal('evidence'), evidenceId: id }),
+    settingsRevision: rev0,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.literal('observer'),
+    occurredAt: iso,
+    kind: v.literal('candidate-proposed'),
+    reasonCode: v.picklist(['accepted', 'duplicate']),
+    entity: v.strictObject({ kind: v.literal('candidate'), candidateId: id }),
+    revision: rev0,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.union([v.literal('user'), v.literal('mcp-agent')]),
+    occurredAt: iso,
+    kind: v.literal('candidate-proposed'),
+    reasonCode: v.picklist(['accepted', 'duplicate']),
+    entity: v.strictObject({ kind: v.literal('candidate'), candidateId: id }),
+    actionId: id,
+    revision: rev0,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.literal('user'),
+    occurredAt: iso,
+    kind: v.literal('candidate-confirmed'),
+    reasonCode: v.literal('accepted'),
+    entity: v.strictObject({ kind: v.literal('candidate'), candidateId: id }),
+    actionId: id,
+    revision: rev0,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.literal('user'),
+    occurredAt: iso,
+    kind: v.literal('candidate-rejected'),
+    reasonCode: v.picklist(['not-a-preference', 'user-requested']),
+    entity: v.strictObject({ kind: v.literal('candidate'), candidateId: id }),
+    actionId: id,
+    revision: rev0,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.literal('user'),
+    occurredAt: iso,
+    kind: v.literal('candidate-deleted'),
+    reasonCode: v.literal('user-requested'),
+    entity: v.strictObject({ kind: v.literal('candidate'), candidateId: id }),
+    actionId: id,
+    revision: rev0,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.literal('user'),
+    occurredAt: iso,
+    kind: v.literal('candidate-suppressed'),
+    reasonCode: v.literal('do-not-suggest-again'),
+    entity: v.strictObject({ kind: v.literal('candidate'), candidateId: id }),
+    actionId: id,
+    revision: rev0,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.literal('user'),
+    occurredAt: iso,
+    kind: v.literal('preference-created'),
+    reasonCode: v.literal('accepted'),
+    entity: v.strictObject({ kind: v.literal('preference'), preferenceId: id }),
+    actionId: id,
+    revision: rev0,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.literal('user'),
+    occurredAt: iso,
+    kind: v.literal('preference-revised'),
+    reasonCode: v.literal('superseded'),
+    entity: v.strictObject({ kind: v.literal('preference'), preferenceId: id }),
+    actionId: id,
+    revision: rev0,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.literal('user'),
+    occurredAt: iso,
+    kind: v.literal('preference-revoked'),
+    reasonCode: v.literal('user-requested'),
+    entity: v.strictObject({ kind: v.literal('preference'), preferenceId: id }),
+    actionId: id,
+    revision: rev0,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.literal('user'),
+    occurredAt: iso,
+    kind: v.literal('connection-settings-updated'),
+    reasonCode: v.literal('accepted'),
+    entity: v.strictObject({ kind: v.literal('connection'), hostId: id }),
+    actionId: id,
+    settingsRevision: rev0,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.literal('adapter'),
+    occurredAt: iso,
+    kind: v.literal('projection-status-reported'),
+    reasonCode: v.picklist([
+      'accepted',
+      'transport-write-failed',
+      'verification-failed',
+      'transport-disconnected',
+      'runtime-unavailable',
+    ]),
+    entity: v.strictObject({ kind: v.literal('connection'), hostId: id }),
+    actionId: id,
+    settingsRevision: rev0,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    id,
+    identity: PreferenceIdentitySchema,
+    actor: v.union([v.literal('adapter'), v.literal('runtime')]),
+    occurredAt: iso,
+    kind: v.literal('policy-decision-recorded'),
+    reasonCode: ContentFreePolicyReasonCodeSchema,
+    entity: v.strictObject({ kind: v.literal('policy-decision'), decisionId: id }),
+    settingsRevision: rev0,
+  }),
+]) as unknown as v.GenericSchema<AuditEvent>
+
+export const AuditQuerySchema = v.pipe(
+  v.strictObject({
+    identity: PreferenceIdentitySchema,
+    actors: v.optional(
+      v.pipe(
+        v.array(AuditActorSchema),
+        v.minLength(1),
+        v.check(uniqueValues),
+      ),
+    ),
+    kinds: v.optional(
+      v.pipe(
+        v.array(AuditEventKindSchema),
+        v.minLength(1),
+        v.check(uniqueValues),
+      ),
+    ),
+    entity: v.optional(AuditEntityReferenceSchema),
+    occurredAtOrAfter: v.optional(iso),
+    occurredBefore: v.optional(iso),
+    limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(1000), v.safeInteger())),
+  }),
+  v.check((query) => {
+    const { occurredAtOrAfter, occurredBefore } = query
+    if (!occurredAtOrAfter || !occurredBefore) return true
+    return occurredAtOrAfter <= occurredBefore
+  }),
+) as v.GenericSchema<AuditQuery>

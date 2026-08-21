@@ -354,3 +354,54 @@ export const contentFreePolicyDecisionFixture = {
   reasonCode: 'observe-disabled',
   occurredAt: '2026-08-21T03:23:00Z',
 } as const
+
+export const mcpPrincipalFixture = {
+  schemaVersion: 1,
+  principalId: 'mcp-codex-local',
+  identity: preferenceIdentityFixture,
+  hostId: 'codex',
+  capability: {
+    allowedDomains: ['work'],
+    allowedOperations: [
+      'read-effective-profile',
+      'explain-preference',
+      'list-pending-candidates',
+      'propose-pending-candidate',
+    ],
+  },
+} as const
+
+export const auditEventFixture = {
+  schemaVersion: 1,
+  id: 'audit-1',
+  identity: preferenceIdentityFixture,
+  actor: 'mcp-agent',
+  kind: 'candidate-proposed',
+  reasonCode: 'accepted',
+  entity: { kind: 'candidate', candidateId: 'candidate-external-1' },
+  occurredAt: '2026-08-21T03:24:00Z',
+  actionId: 'action-propose-1',
+  revision: 0,
+} as const
+
+export const observerCandidateProposedAuditEventFixture = {
+  schemaVersion: 1,
+  id: 'audit-observer-proposal-1',
+  identity: preferenceIdentityFixture,
+  actor: 'observer',
+  kind: 'candidate-proposed',
+  reasonCode: 'accepted',
+  entity: { kind: 'candidate', candidateId: 'candidate-1' },
+  occurredAt: '2026-08-21T03:24:01Z',
+  revision: 0,
+} as const
+
+export const auditQueryFixture = {
+  identity: preferenceIdentityFixture,
+  actors: ['mcp-agent'],
+  kinds: ['candidate-proposed'],
+  entity: { kind: 'candidate', candidateId: 'candidate-external-1' },
+  occurredAtOrAfter: '2026-08-21T00:00:00Z',
+  occurredBefore: '2026-08-22T00:00:00Z',
+  limit: 50,
+} as const
