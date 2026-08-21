@@ -33,6 +33,7 @@
 companion-preference-engine/
 ├── apps/
 │   ├── inspector/
+│   ├── m0-terminal/
 │   ├── reference-host/
 │   └── runtime-local/
 ├── adapters/
@@ -58,6 +59,7 @@ The tasks below form a roadmap, not one indivisible delivery. Execution stops at
 | Milestone | Tasks | Required proof | Explicitly not blocking this gate |
 | --- | --- | --- | --- |
 | M0 — core hypothesis | 1–6 | Contracts, deterministic lifecycle/resolver, in-memory repository, fake observer, frozen minimum evaluation set and baseline report | Real model, SQLite, HTTP, UI, AIRI, MCP |
+| M0.5 — terminal experience checkpoint | After Task 6 | Deterministic candidate → confirm → guidance → revoke walkthrough, cross-domain exclusion, and an explicit user `CONTINUE` / `REVISE` / `STOP` decision | Real model quality, persistence, HTTP, Web UI, AIRI, MCP |
 | M1 — usable local slice | 7–14 | Real Observer behind consent, single-writer SQLite runtime, minimal Pending/Profile Inspector, reference-host closed loop, 60-case evaluation, and blinded export | AIRI, MCP, full operational packaging |
 | M2 — AIRI feasibility | 15 | Protocol spike passes first; Sidecar proves the same core works in a second host through sanitized Adapter → runtime ingestion and confirmed-guidance projection | Upstream protocol changes, multi-session support |
 | M3 — optional interoperability | 16 | MCP reads the canonical runtime and cannot bypass governance | Passive observation through MCP |
@@ -66,6 +68,7 @@ The tasks below form a roadmap, not one indivisible delivery. Execution stops at
 Go/No-Go rules:
 
 - Stop after M0 if the governed representation cannot express the selected work-companion preferences deterministically.
+- After M0 passes, run the approved B2 M0.5 terminal checkpoint in `docs/plans/2026-08-21-m0p5-terminal-experience.md`. Do not start Task 7 until the user records `CONTINUE`; `REVISE` repeats M0.5 and `STOP` triggers scope review.
 - Stop after M1 if candidate precision, conflict/change handling, deterministic privacy, candidate frequency, or the reference-host closed loop fails Task 14. Two-host reuse is not proven until M2; blind human preference and real-user acceptance remain M4 evidence.
 - Do not start the production AIRI adapter until Task 15's protocol spike confirms the exact SDK/runtime semantics against the pinned AIRI revision.
 - MCP and UI polish are optional follow-ons; they are not evidence that the core preference hypothesis works.
@@ -634,6 +637,8 @@ Expected: contracts, lifecycle, resolution, repository, fake Observer, dataset l
 git add packages/observer evals pnpm-lock.yaml
 git commit -m "test: freeze minimum preference evaluation set"
 ```
+
+**M0.5 stop point:** After this commit and the complete M0 Gate pass, execute `docs/plans/2026-08-21-m0p5-terminal-experience.md`. Task 7 remains blocked until the recorded M0.5 user decision is `CONTINUE`.
 
 ## Task 7: Add the safe OpenAI-compatible Observer adapter
 
