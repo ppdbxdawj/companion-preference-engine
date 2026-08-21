@@ -405,3 +405,41 @@ export const auditQueryFixture = {
   occurredBefore: '2026-08-22T00:00:00Z',
   limit: 50,
 } as const
+
+export const httpPrincipalFixture = {
+  schemaVersion: 1,
+  principalId: 'runtime-client-reference-host',
+  identity: preferenceIdentityFixture,
+  hostId: identityContextFixture.hostId,
+} as const
+
+export const ingestEvidenceHttpRequestFixture = {
+  evidence: interactionEvidenceFixture,
+  expectedSettingsRevision:
+    interactionEvidenceFixture.policySnapshot.settingsRevision,
+} as const
+
+export const effectiveProfileHttpRequestFixture = {
+  query: effectiveProfileQueryFixture,
+} as const
+
+export const governanceMutationHttpRequestFixture = {
+  command: confirmCandidateCommandFixture,
+} as const
+
+export const mutationSuccessHttpResponseFixture = {
+  ok: true,
+  requestId: 'request-1',
+  data: mutationReceiptFixture,
+} as const
+
+export const revisionErrorHttpResponseFixture = {
+  ok: false,
+  requestId: 'request-2',
+  error: {
+    code: 'revision-conflict',
+    message: 'The expected revision is stale.',
+    retryable: false,
+    currentRevision: 2,
+  },
+} as const

@@ -2500,3 +2500,210 @@ describe('T2C2B content-free audit contracts', () => {
     ]) expect(v.safeParse(AuditEventSchema, input).success).toBe(false)
   })
 })
+
+describe('T2C2C host-neutral HTTP DTO contracts', () => {
+  it('accepts the frozen requests, principal, and strict response envelopes', async () => {
+    const s = await import('./schemas.js')
+    const f = await import('./fixtures.js')
+
+    expect(v.parse(s.HttpPrincipalSchema, f.httpPrincipalFixture)).toEqual(
+      f.httpPrincipalFixture,
+    )
+    expect(
+      v.parse(
+        s.IngestEvidenceHttpRequestSchema,
+        f.ingestEvidenceHttpRequestFixture,
+      ),
+    ).toEqual(f.ingestEvidenceHttpRequestFixture)
+    expect(
+      v.parse(
+        s.EffectiveProfileHttpRequestSchema,
+        f.effectiveProfileHttpRequestFixture,
+      ),
+    ).toEqual(f.effectiveProfileHttpRequestFixture)
+    expect(
+      v.parse(
+        s.GovernanceMutationHttpRequestSchema,
+        f.governanceMutationHttpRequestFixture,
+      ),
+    ).toEqual(f.governanceMutationHttpRequestFixture)
+    expect(
+      v.parse(
+        s.HttpResponseSchema(s.MutationReceiptSchema),
+        f.mutationSuccessHttpResponseFixture,
+      ),
+    ).toEqual(f.mutationSuccessHttpResponseFixture)
+    expect(
+      v.parse(
+        s.HttpResponseSchema(s.MutationReceiptSchema),
+        f.revisionErrorHttpResponseFixture,
+      ),
+    ).toEqual(f.revisionErrorHttpResponseFixture)
+
+    expectTypeOf<v.InferOutput<typeof s.HttpPrincipalSchema>>().toEqualTypeOf<
+      import('./schemas.js').HttpPrincipal
+    >()
+    expectTypeOf<
+      v.InferOutput<typeof s.GovernanceMutationHttpRequestSchema>
+    >().toEqualTypeOf<import('./schemas.js').GovernanceMutationHttpRequest>()
+    expectTypeOf<
+      v.InferOutput<ReturnType<typeof s.HttpResponseSchema<import('./schemas.js').MutationReceipt>>>
+    >().toEqualTypeOf<import('./schemas.js').HttpResponse<import('./schemas.js').MutationReceipt>>()
+
+    expect(
+      v.safeParse(s.HttpResponseSchema(s.MutationReceiptSchema), {
+        ...f.mutationSuccessHttpResponseFixture,
+        data: { ...f.mutationReceiptFixture, actionId: '' },
+      }).success,
+    ).toBe(false)
+  })
+
+  it('never accepts an authenticated principal or bearer token from a request body', async () => {
+    const s = await import('./schemas.js')
+    const f = await import('./fixtures.js')
+
+    for (const injected of [
+      { principal: f.httpPrincipalFixture },
+      { bearerToken: 'secret-token' },
+    ]) {
+      expect(
+        v.safeParse(s.GovernanceMutationHttpRequestSchema, {
+          ...f.governanceMutationHttpRequestFixture,
+          ...injected,
+        }).success,
+      ).toBe(false)
+    }
+  })
+
+  it('retains action idempotency and optimistic revision fences in mutation payloads', async () => {
+    const s = await import('./schemas.js')
+    const f = await import('./fixtures.js')
+
+    for (const patch of [
+      { actionId: '' },
+      { actionId: undefined },
+      { expectedCandidateRevision: -1 },
+      { expectedCandidateRevision: undefined },
+    ]) {
+      expect(
+        v.safeParse(s.GovernanceMutationHttpRequestSchema, {
+          command: { ...f.confirmCandidateCommandFixture, ...patch },
+        }).success,
+      ).toBe(false)
+    }
+  })
+
+  it('keeps transport errors closed, content-free, and revision-safe', async () => {
+    const s = await import('./schemas.js')
+    const f = await import('./fixtures.js')
+
+    for (const input of [
+      { ...f.revisionErrorHttpResponseFixture, token: 'secret-token' },
+      {
+        ...f.revisionErrorHttpResponseFixture,
+        error: {
+          ...f.revisionErrorHttpResponseFixture.error,
+          learningPayload: { userText: 'private' },
+        },
+      },
+      {
+        ...f.revisionErrorHttpResponseFixture,
+        error: {
+          ...f.revisionErrorHttpResponseFixture.error,
+          code: 'database-exploded',
+        },
+      },
+      {
+        ...f.revisionErrorHttpResponseFixture,
+        error: {
+          ...f.revisionErrorHttpResponseFixture.error,
+          currentRevision: -1,
+        },
+      },
+    ]) {
+      expect(
+        v.safeParse(s.HttpResponseSchema(s.MutationReceiptSchema), input)
+          .success,
+      ).toBe(false)
+    }
+
+    for (const field of [
+      'evidence',
+      'composedMessage',
+      'contexts',
+      'prompts',
+      'tools',
+      'metadata',
+      'stack',
+      'cause',
+      'database',
+    ]) {
+      expect(
+        v.safeParse(s.HttpErrorDetailSchema, {
+          ...f.revisionErrorHttpResponseFixture.error,
+          [field]: 'private',
+        }).success,
+      ).toBe(false)
+    }
+
+    expect(
+      v.safeParse(s.HttpResponseSchema(s.MutationReceiptSchema), {
+        ...f.mutationSuccessHttpResponseFixture,
+        error: f.revisionErrorHttpResponseFixture.error,
+      }).success,
+    ).toBe(false)
+  })
+
+  it('keeps list taxonomies, result revisions, and audit results strict', async () => {
+    const s = await import('./schemas.js')
+    const f = await import('./fixtures.js')
+
+    expect(
+      v.safeParse(s.CandidateListHttpRequestSchema, {
+        identity: f.preferenceIdentityFixture,
+        statuses: ['active'],
+      }).success,
+    ).toBe(false)
+    expect(
+      v.safeParse(s.PreferenceListHttpRequestSchema, {
+        identity: f.preferenceIdentityFixture,
+        statuses: ['pending_confirmation'],
+      }).success,
+    ).toBe(false)
+    for (const statuses of [[], ['confirmed', 'confirmed']]) {
+      expect(
+        v.safeParse(s.CandidateListHttpRequestSchema, {
+          identity: f.preferenceIdentityFixture,
+          statuses,
+        }).success,
+      ).toBe(false)
+    }
+    for (const statuses of [[], ['active', 'active']]) {
+      expect(
+        v.safeParse(s.PreferenceListHttpRequestSchema, {
+          identity: f.preferenceIdentityFixture,
+          statuses,
+        }).success,
+      ).toBe(false)
+    }
+    expect(
+      v.safeParse(s.IngestEvidenceHttpRequestSchema, {
+        ...f.ingestEvidenceHttpRequestFixture,
+        expectedSettingsRevision: -1,
+      }).success,
+    ).toBe(false)
+    expect(
+      v.safeParse(s.EffectiveProfileHttpResultSchema, {
+        guidance: f.behaviorGuidanceFixture,
+        profileRevision: -1,
+        settingsRevision: 1,
+      }).success,
+    ).toBe(false)
+    expect(
+      v.safeParse(s.AuditHttpResultSchema, {
+        events: [f.auditEventFixture],
+        composedMessage: 'private',
+      }).success,
+    ).toBe(false)
+  })
+})

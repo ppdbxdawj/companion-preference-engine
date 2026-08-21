@@ -1543,3 +1543,148 @@ export const AuditQuerySchema = v.pipe(
     return occurredAtOrAfter <= occurredBefore
   }),
 ) as v.GenericSchema<AuditQuery>
+
+// T2C2C HTTP DTO freeze. HTTP only projects the commands and queries above.
+// Runtime derives this principal from bearer-token configuration; request
+// bodies never supply or override it.
+export type HttpPrincipal = { schemaVersion: 1; principalId: string; identity: PreferenceIdentity; hostId: string }
+export type HttpErrorCode = 'bad-request' | 'unauthorized' | 'forbidden' | 'not-found' | 'revision-conflict' | 'action-payload-conflict' | 'settings-revision-conflict' | 'reset-in-progress' | 'internal-error'
+export type HttpErrorDetail = { code: HttpErrorCode; message: string; retryable: boolean; currentRevision?: number }
+export type HttpSuccessResponse<T> = { ok: true; requestId: string; data: T }
+export type HttpErrorResponse = { ok: false; requestId: string; error: HttpErrorDetail }
+export type HttpResponse<T> = HttpSuccessResponse<T> | HttpErrorResponse
+
+export type IngestEvidenceHttpRequest = { evidence: InteractionEvidence; expectedSettingsRevision: number }
+export type EffectiveProfileHttpRequest = { query: EffectiveProfileQuery }
+export type CandidateListHttpRequest = { identity: PreferenceIdentity; statuses?: CandidateStatus[] }
+export type PreferenceListHttpRequest = { identity: PreferenceIdentity; statuses?: PreferenceStatus[] }
+export type ConnectionSettingsHttpRequest = { identity: PreferenceIdentity; hostId: string }
+export type AuditHttpRequest = { query: AuditQuery }
+export type GovernanceMutationCommand = ProposeCandidateCommand | ConfirmCandidateCommand | RejectCandidateCommand | DeleteCandidateCommand | SuppressCandidateCommand | CreateExplicitPreferenceCommand | RevisePreferenceCommand | RevokePreferenceCommand | UpdateConnectionSettingsCommand | ReportProjectionStatusCommand
+export type GovernanceMutationHttpRequest = { command: GovernanceMutationCommand }
+
+export type IngestEvidenceHttpResult = { evidenceId: string; disposition: 'accepted' | 'duplicate'; settingsRevision: number }
+export type EffectiveProfileHttpResult = { guidance: BehaviorGuidance; profileRevision: number; settingsRevision: number }
+export type CandidateListHttpResult = { candidates: PreferenceCandidate[] }
+export type PreferenceListHttpResult = { preferences: PreferenceRecord[] }
+export type AuditHttpResult = { events: AuditEvent[] }
+
+// Strict runtime schemas for the frozen T2C2C HTTP DTO contract.
+export const HttpPrincipalSchema = v.strictObject({
+  schemaVersion: v.literal(1),
+  principalId: v.pipe(v.string(), v.nonEmpty()),
+  identity: PreferenceIdentitySchema,
+  hostId: v.pipe(v.string(), v.nonEmpty()),
+}) as v.GenericSchema<HttpPrincipal>
+
+export const HttpErrorCodeSchema = v.picklist([
+  'bad-request',
+  'unauthorized',
+  'forbidden',
+  'not-found',
+  'revision-conflict',
+  'action-payload-conflict',
+  'settings-revision-conflict',
+  'reset-in-progress',
+  'internal-error',
+]) as v.GenericSchema<HttpErrorCode>
+
+export const HttpErrorDetailSchema = v.strictObject({
+  code: HttpErrorCodeSchema,
+  message: v.pipe(v.string(), v.nonEmpty()),
+  retryable: v.boolean(),
+  currentRevision: v.optional(rev0),
+}) as v.GenericSchema<HttpErrorDetail>
+
+export const HttpErrorResponseSchema = v.strictObject({
+  ok: v.literal(false),
+  requestId: v.pipe(v.string(), v.nonEmpty()),
+  error: HttpErrorDetailSchema,
+}) as v.GenericSchema<HttpErrorResponse>
+
+export const IngestEvidenceHttpRequestSchema = v.strictObject({
+  evidence: InteractionEvidenceSchema,
+  expectedSettingsRevision: rev0,
+}) as v.GenericSchema<IngestEvidenceHttpRequest>
+
+export const EffectiveProfileHttpRequestSchema = v.strictObject({
+  query: EffectiveProfileQuerySchema,
+}) as v.GenericSchema<EffectiveProfileHttpRequest>
+
+export const CandidateListHttpRequestSchema = v.strictObject({
+  identity: PreferenceIdentitySchema,
+  statuses: v.optional(
+    v.pipe(v.array(CandidateStatusSchema), v.minLength(1), v.check(uniqueValues)),
+  ),
+}) as v.GenericSchema<CandidateListHttpRequest>
+
+export const PreferenceListHttpRequestSchema = v.strictObject({
+  identity: PreferenceIdentitySchema,
+  statuses: v.optional(
+    v.pipe(v.array(PreferenceStatusSchema), v.minLength(1), v.check(uniqueValues)),
+  ),
+}) as v.GenericSchema<PreferenceListHttpRequest>
+
+export const ConnectionSettingsHttpRequestSchema = v.strictObject({
+  identity: PreferenceIdentitySchema,
+  hostId: v.pipe(v.string(), v.nonEmpty()),
+}) as v.GenericSchema<ConnectionSettingsHttpRequest>
+
+export const AuditHttpRequestSchema = v.strictObject({
+  query: AuditQuerySchema,
+}) as v.GenericSchema<AuditHttpRequest>
+
+export const GovernanceMutationCommandSchema = v.union([
+  ProposeCandidateCommandSchema,
+  ConfirmCandidateCommandSchema,
+  RejectCandidateCommandSchema,
+  DeleteCandidateCommandSchema,
+  SuppressCandidateCommandSchema,
+  CreateExplicitPreferenceCommandSchema,
+  RevisePreferenceCommandSchema,
+  RevokePreferenceCommandSchema,
+  UpdateConnectionSettingsCommandSchema,
+  ReportProjectionStatusCommandSchema,
+]) as unknown as v.GenericSchema<GovernanceMutationCommand>
+
+export const GovernanceMutationHttpRequestSchema = v.strictObject({
+  command: GovernanceMutationCommandSchema,
+}) as v.GenericSchema<GovernanceMutationHttpRequest>
+
+export const IngestEvidenceHttpResultSchema = v.strictObject({
+  evidenceId: v.pipe(v.string(), v.nonEmpty()),
+  disposition: v.picklist(['accepted', 'duplicate']),
+  settingsRevision: rev0,
+}) as v.GenericSchema<IngestEvidenceHttpResult>
+
+export const EffectiveProfileHttpResultSchema = v.strictObject({
+  guidance: BehaviorGuidanceSchema,
+  profileRevision: rev0,
+  settingsRevision: rev0,
+}) as v.GenericSchema<EffectiveProfileHttpResult>
+
+export const CandidateListHttpResultSchema = v.strictObject({
+  candidates: v.array(PreferenceCandidateSchema),
+}) as v.GenericSchema<CandidateListHttpResult>
+
+export const PreferenceListHttpResultSchema = v.strictObject({
+  preferences: v.array(PreferenceRecordSchema),
+}) as v.GenericSchema<PreferenceListHttpResult>
+
+export const AuditHttpResultSchema = v.strictObject({
+  events: v.array(AuditEventSchema),
+}) as v.GenericSchema<AuditHttpResult>
+
+export const HttpSuccessResponseSchema = <T>(
+  data: v.GenericSchema<T>,
+) => v.strictObject({
+  ok: v.literal(true),
+  requestId: v.pipe(v.string(), v.nonEmpty()),
+  data,
+}) as v.GenericSchema<HttpSuccessResponse<T>>
+
+export const HttpResponseSchema = <T>(data: v.GenericSchema<T>) =>
+  v.union([
+    HttpSuccessResponseSchema(data),
+    HttpErrorResponseSchema,
+  ]) as v.GenericSchema<HttpResponse<T>>
