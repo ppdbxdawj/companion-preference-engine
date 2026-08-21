@@ -172,12 +172,16 @@ import {
   pendingCandidateProposalFixture,
   preferenceCandidateFixture,
   preferenceIdentityFixture,
+  preferenceRevokedAuditEventFixture,
+  preferenceSupersessionAuditEventsFixture,
   proposeCandidateCommandFixture,
   rejectCandidateCommandFixture,
   reportProjectionStatusCommandFixture,
+  replacementPreferenceRecordFixture,
   responseDetailPreferenceFixture,
   revisePreferenceCommandFixture,
   revokePreferenceCommandFixture,
+  revokedPreferenceRecordFixture,
   suppressCandidateCommandFixture,
   updateConnectionSettingsCommandFixture,
   workspacePreferenceScopeFixture,
@@ -1602,7 +1606,7 @@ describe('PreferenceRecordSchema authority, revision, and supersession', () => {
     }
   })
 
-  it('requires positive safe lineage revisions', () => {
+  it('requires positive safe optimistic-concurrency revisions', () => {
     for (const revision of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '1']) {
       expect(
         v.safeParse(PreferenceRecordSchema, {
@@ -1613,31 +1617,29 @@ describe('PreferenceRecordSchema authority, revision, and supersession', () => {
     }
   })
 
-  it('requires every revision after one to explicitly name its predecessor', () => {
+  it('allows a status mutation to advance revision without inventing a predecessor', () => {
     expect(
-      v.safeParse(PreferenceRecordSchema, {
-        ...activePreferenceRecordFixture,
-        id: 'preference-2',
-        revision: 2,
-      }).success,
-    ).toBe(false)
-    expect(
-      v.safeParse(PreferenceRecordSchema, {
-        ...activePreferenceRecordFixture,
-        id: 'preference-2',
-        revision: 2,
-        supersedes: activePreferenceRecordFixture.id,
-      }).success,
+      v.safeParse(PreferenceRecordSchema, revokedPreferenceRecordFixture).success,
     ).toBe(true)
   })
 
-  it('forbids a revision-one record from claiming a predecessor', () => {
+  it('allows a real replacement edge independently of numeric revision', () => {
     expect(
-      v.safeParse(PreferenceRecordSchema, {
-        ...activePreferenceRecordFixture,
-        supersedes: 'preference-0',
-      }).success,
-    ).toBe(false)
+      v.safeParse(PreferenceRecordSchema, replacementPreferenceRecordFixture)
+        .success,
+    ).toBe(true)
+  })
+
+  it('rejects self-supersession at every valid revision', () => {
+    for (const revision of [1, 2]) {
+      expect(
+        v.safeParse(PreferenceRecordSchema, {
+          ...activePreferenceRecordFixture,
+          revision,
+          supersedes: activePreferenceRecordFixture.id,
+        }).success,
+      ).toBe(false)
+    }
   })
 
   it('requires superseded status and supersededBy to agree', () => {
@@ -2286,6 +2288,33 @@ describe('T2C2B MCP principal and capability contracts', () => {
 })
 
 describe('T2C2B content-free audit contracts', () => {
+  it('accepts one record-specific audit event for an ordinary revocation', () => {
+    expect(preferenceRevokedAuditEventFixture.entity.preferenceId).toBe(
+      revokedPreferenceRecordFixture.id,
+    )
+    expect(preferenceRevokedAuditEventFixture.revision).toBe(
+      revokedPreferenceRecordFixture.revision,
+    )
+    expect(
+      v.parse(AuditEventSchema, preferenceRevokedAuditEventFixture),
+    ).toEqual(preferenceRevokedAuditEventFixture)
+  })
+
+  it('accepts two record-specific audit events for one supersession action', () => {
+    const [previousEvent, replacementEvent] =
+      preferenceSupersessionAuditEventsFixture
+
+    expect(previousEvent.actionId).toBe(replacementEvent.actionId)
+    expect(previousEvent.entity.preferenceId).not.toBe(
+      replacementEvent.entity.preferenceId,
+    )
+    expect(previousEvent.revision).toBe(2)
+    expect(replacementEvent.revision).toBe(1)
+    for (const event of preferenceSupersessionAuditEventsFixture) {
+      expect(v.safeParse(AuditEventSchema, event).success).toBe(true)
+    }
+  })
+
   it('freezes closed actors, kinds, reason codes, entity references, event, and query', () => {
     expectTypeOf<v.InferOutput<typeof AuditActorSchema>>().toEqualTypeOf<AuditActor>()
     expectTypeOf<v.InferOutput<typeof AuditEventKindSchema>>().toEqualTypeOf<AuditEventKind>()

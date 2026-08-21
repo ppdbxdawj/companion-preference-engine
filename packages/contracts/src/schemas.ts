@@ -362,9 +362,12 @@ export type PreferenceRecord = {
   scope: PreferenceScope
   projection: ProjectionPolicy
   authority: PreferenceAuthority
+  /** Mutable optimistic-concurrency revision, independent of lineage. */
   revision: number
   status: PreferenceStatus
+  /** Prior record replaced by this record, only for a real lineage edge. */
   supersedes?: string
+  /** Replacement record, present only after this record is superseded. */
   supersededBy?: string
   evidenceIds: string[]
   createdAt: string
@@ -927,7 +930,8 @@ export const CandidateProvenanceSchema = v.variant('kind',[ObserverEvidenceProve
 export const CandidateIdempotencyKeySchema = v.strictObject({version:v.literal(1),algorithm:v.literal('sha256'),digest:v.pipe(v.string(),v.regex(/^[0-9a-f]{64}$/))})
 export const PreferenceCandidateSchema = v.pipe(v.strictObject({schemaVersion:v.literal(1),id,identity:PreferenceIdentitySchema,preference:PreferenceSchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,provenance:CandidateProvenanceSchema,evidenceIds:nonemptyIds,counterEvidenceIds:nonemptyIds,confidence:finite01,riskCategory:PreferenceRiskCategorySchema,status:CandidateStatusSchema,idempotencyKey:CandidateIdempotencyKeySchema,revision:rev0,createdAt:iso,updatedAt:iso,expiresAt:v.optional(iso)}),v.check(x => x.provenance.kind !== 'observer-evidence' || JSON.stringify(x.evidenceIds) === JSON.stringify(x.provenance.evidenceIds)))
 export const PendingCandidateProposalSchema = v.strictObject({preference:PreferenceSchema,identity:PreferenceIdentitySchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,provenance:CandidateProvenanceSchema,evidenceIds:nonemptyIds,counterEvidenceIds:nonemptyIds,confidence:finite01,riskCategory:PreferenceRiskCategorySchema,idempotencyKey:CandidateIdempotencyKeySchema,status:v.literal('pending_confirmation')}) as unknown as v.GenericSchema<PendingCandidateProposal>
-export const PreferenceRecordSchema = v.pipe(v.strictObject({schemaVersion:v.literal(1),id,identity:PreferenceIdentitySchema,preference:PreferenceSchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,authority:PreferenceAuthoritySchema,revision:rev1,status:PreferenceStatusSchema,supersedes:v.optional(id),supersededBy:v.optional(id),evidenceIds:v.array(id),createdAt:iso,updatedAt:iso,expiresAt:v.optional(iso)}),v.check(x => (x.revision===1 ? x.supersedes===undefined : x.supersedes!==undefined && x.supersedes!==x.id) && (x.status==='superseded' ? x.supersededBy!==undefined && x.supersededBy!==x.id : x.supersededBy===undefined)))
+// Record revision is independent from the optional lineage edge.
+export const PreferenceRecordSchema = v.pipe(v.strictObject({schemaVersion:v.literal(1),id,identity:PreferenceIdentitySchema,preference:PreferenceSchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,authority:PreferenceAuthoritySchema,revision:rev1,status:PreferenceStatusSchema,supersedes:v.optional(id),supersededBy:v.optional(id),evidenceIds:v.array(id),createdAt:iso,updatedAt:iso,expiresAt:v.optional(iso)}),v.check(x => x.supersedes!==x.id && (x.status==='superseded' ? x.supersededBy!==undefined && x.supersededBy!==x.id : x.supersededBy===undefined)))
 export const EffectiveProfileQuerySchema = v.strictObject({userId:id,companionId:id,relationshipId:id,hostId:id,domain:DomainSchema,workspaceId:v.optional(id),taskId:v.optional(id),now:iso})
 export const BehaviorGuidanceSchema = v.strictObject({responseDetail:v.optional(PreferenceValueSchemas['interaction.response_detail']),directness:v.optional(PreferenceValueSchemas['interaction.directness']),initiative:v.optional(PreferenceValueSchemas['interaction.initiative']),interruptionPolicy:v.optional(PreferenceValueSchemas['interaction.interruption_policy']),approvalStyle:v.optional(PreferenceValueSchemas['work.approval_style']),verificationDepth:v.optional(PreferenceValueSchemas['work.verification_depth']),supportStyle:v.optional(PreferenceValueSchemas['companion.support_style']),avoid:v.optional(v.array(v.literal('generic_reassurance')))})
 export const SupersededPreferenceExpectationSchema = v.strictObject({preferenceId:id,expectedRevision:rev1})

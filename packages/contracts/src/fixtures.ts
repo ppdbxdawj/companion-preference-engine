@@ -170,6 +170,26 @@ export const activePreferenceRecordFixture = {
   updatedAt: '2026-08-21T03:05:00Z',
 } as const
 
+export const revokedPreferenceRecordFixture = {
+  ...activePreferenceRecordFixture,
+  revision: 2,
+  status: 'revoked',
+  updatedAt: '2026-08-21T03:15:00Z',
+} as const
+
+export const replacementPreferenceRecordFixture = {
+  ...activePreferenceRecordFixture,
+  id: 'preference-2',
+  preference: {
+    key: 'interaction.response_detail',
+    value: 'detailed',
+  },
+  revision: 1,
+  supersedes: activePreferenceRecordFixture.id,
+  createdAt: '2026-08-21T03:14:00Z',
+  updatedAt: '2026-08-21T03:14:00Z',
+} as const
+
 export const effectiveProfileQueryFixture = {
   userId: identityContextFixture.userId,
   companionId: identityContextFixture.companionId,
@@ -394,6 +414,57 @@ export const observerCandidateProposedAuditEventFixture = {
   entity: { kind: 'candidate', candidateId: 'candidate-1' },
   occurredAt: '2026-08-21T03:24:01Z',
   revision: 0,
+} as const
+
+// One event per affected record; shared actionId binds the supersession pair.
+// Each event carries the resulting revision of its referenced record.
+export const preferenceSupersessionAuditEventsFixture = [
+  {
+    schemaVersion: 1,
+    id: 'audit-supersede-old-1',
+    identity: preferenceIdentityFixture,
+    actor: 'user',
+    kind: 'preference-revised',
+    reasonCode: 'superseded',
+    entity: {
+      kind: 'preference',
+      preferenceId: activePreferenceRecordFixture.id,
+    },
+    occurredAt: '2026-08-21T03:14:00Z',
+    actionId: revisePreferenceCommandFixture.actionId,
+    revision: 2,
+  },
+  {
+    schemaVersion: 1,
+    id: 'audit-supersede-new-1',
+    identity: preferenceIdentityFixture,
+    actor: 'user',
+    kind: 'preference-revised',
+    reasonCode: 'superseded',
+    entity: {
+      kind: 'preference',
+      preferenceId: replacementPreferenceRecordFixture.id,
+    },
+    occurredAt: '2026-08-21T03:14:00Z',
+    actionId: revisePreferenceCommandFixture.actionId,
+    revision: replacementPreferenceRecordFixture.revision,
+  },
+] as const
+
+export const preferenceRevokedAuditEventFixture = {
+  schemaVersion: 1,
+  id: 'audit-revoke-1',
+  identity: preferenceIdentityFixture,
+  actor: 'user',
+  kind: 'preference-revoked',
+  reasonCode: 'user-requested',
+  entity: {
+    kind: 'preference',
+    preferenceId: revokedPreferenceRecordFixture.id,
+  },
+  occurredAt: revokePreferenceCommandFixture.occurredAt,
+  actionId: revokePreferenceCommandFixture.actionId,
+  revision: revokedPreferenceRecordFixture.revision,
 } as const
 
 export const auditQueryFixture = {
