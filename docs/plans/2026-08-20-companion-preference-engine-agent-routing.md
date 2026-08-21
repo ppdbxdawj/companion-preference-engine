@@ -5,11 +5,11 @@
 This document turns the implementation plan into a mandatory two-tier execution protocol.
 
 ```text
-high = gpt-5.6-sol / high
-low  = gpt-5.6-luna / low
+high-tier role = gpt-5.6-sol / low
+low-tier role  = gpt-5.3-codex-spark
 ```
 
-`Light` is the user-facing name for the low tier; the supported reasoning-effort value passed to the agent runtime is `low`.
+`High-tier` and `low-tier` name responsibility levels, not model reasoning settings. For the high-tier role, `Light` is the user's label and the supported reasoning-effort value passed to the agent runtime is `low`. The low-tier role uses the exact Codex Spark model ID and must stop rather than silently substitute another model if Spark is unavailable.
 
 The split is based on uncertainty and blast radius, not frontend versus backend. The high tier owns decisions that can silently change product meaning, security, privacy, persistence, protocol semantics, or evaluation conclusions. The low tier implements only frozen behavior that tests can decide mechanically.
 
@@ -182,7 +182,7 @@ The low tier stops and returns control to the high tier when any of these occurs
 
 ```text
 Package ID:
-Tier/model: gpt-5.6-luna / low
+Tier/model: gpt-5.3-codex-spark
 Base commit:
 Plan hashes:
 Goal:
