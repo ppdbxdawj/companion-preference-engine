@@ -53,6 +53,86 @@ import {
   projectionPolicyFixture,
   remoteOutboundInferencePolicyFixture,
 } from './fixtures.js'
+import {
+  BehaviorGuidanceSchema,
+  CandidateIdempotencyKeySchema,
+  CandidateProvenanceSchema,
+  CandidateStatusSchema,
+  ConfirmCandidateCommandSchema,
+  CreateExplicitPreferenceCommandSchema,
+  DeleteCandidateCommandSchema,
+  EffectiveProfileQuerySchema,
+  ExternalProposalProvenanceSchema,
+  GovernanceMutationKindSchema,
+  MutationReceiptResultSchema,
+  MutationReceiptSchema,
+  ObserverEvidenceProvenanceSchema,
+  PendingCandidateProposalSchema,
+  PreferenceAuthoritySchema,
+  PreferenceCandidateSchema,
+  PreferenceIdentitySchema,
+  PreferenceRecordSchema,
+  PreferenceRiskCategorySchema,
+  PreferenceSchema,
+  PreferenceScopeSchema,
+  PreferenceStatusSchema,
+  ProposeCandidateCommandSchema,
+  RejectCandidateCommandSchema,
+  RevisePreferenceCommandSchema,
+  RevokePreferenceCommandSchema,
+  SupersededPreferenceExpectationSchema,
+  SuppressCandidateCommandSchema,
+  type BehaviorGuidance,
+  type CandidateIdempotencyKey,
+  type CandidateProvenance,
+  type CandidateStatus,
+  type ConfirmCandidateCommand,
+  type CreateExplicitPreferenceCommand,
+  type DeleteCandidateCommand,
+  type EffectiveProfileQuery,
+  type ExternalProposalProvenance,
+  type GovernanceMutationKind,
+  type MutationReceipt,
+  type MutationReceiptResult,
+  type ObserverEvidenceProvenance,
+  type PendingCandidateProposal,
+  type Preference,
+  type PreferenceAuthority,
+  type PreferenceCandidate,
+  type PreferenceIdentity,
+  type PreferenceRecord,
+  type PreferenceRiskCategory,
+  type PreferenceScope,
+  type PreferenceStatus,
+  type ProposeCandidateCommand,
+  type RejectCandidateCommand,
+  type RevisePreferenceCommand,
+  type RevokePreferenceCommand,
+  type SupersededPreferenceExpectation,
+  type SuppressCandidateCommand,
+} from './schemas.js'
+import {
+  activePreferenceRecordFixture,
+  behaviorGuidanceFixture,
+  candidateIdempotencyKeyFixture,
+  confirmCandidateCommandFixture,
+  createExplicitPreferenceCommandFixture,
+  deleteCandidateCommandFixture,
+  effectiveProfileQueryFixture,
+  externalProposalProvenanceFixture,
+  mutationReceiptFixture,
+  observerEvidenceProvenanceFixture,
+  pendingCandidateProposalFixture,
+  preferenceCandidateFixture,
+  preferenceIdentityFixture,
+  proposeCandidateCommandFixture,
+  rejectCandidateCommandFixture,
+  responseDetailPreferenceFixture,
+  revisePreferenceCommandFixture,
+  revokePreferenceCommandFixture,
+  suppressCandidateCommandFixture,
+  workspacePreferenceScopeFixture,
+} from './fixtures.js'
 
 function omitKey(input: object, key: string): Record<string, unknown> {
   return Object.fromEntries(
@@ -1020,6 +1100,770 @@ describe('EvidenceProvenanceSchema', () => {
           ...extra,
         }).success,
       ).toBe(false)
+    }
+  })
+})
+
+describe('T2C1 frozen public governance types', () => {
+  it('keeps candidate and preference lifecycle states separate', () => {
+    expectTypeOf<CandidateStatus>().toEqualTypeOf<
+      | 'pending_confirmation'
+      | 'confirmed'
+      | 'rejected'
+      | 'superseded'
+      | 'deleted'
+    >()
+    expectTypeOf<PreferenceStatus>().toEqualTypeOf<
+      'active' | 'superseded' | 'revoked' | 'deleted'
+    >()
+    expectTypeOf<PreferenceAuthority>().toEqualTypeOf<
+      'user-set' | 'user-confirmed'
+    >()
+    expectTypeOf<PreferenceRiskCategory>().toEqualTypeOf<
+      'standard' | 'sensitive'
+    >()
+  })
+
+  it('freezes the five-level discriminated scope union', () => {
+    expectTypeOf<PreferenceScope>().toEqualTypeOf<
+      | { kind: 'task'; taskId: string }
+      | { kind: 'workspace'; workspaceId: string }
+      | { kind: 'host'; hostId: string }
+      | { kind: 'domain'; domain: Domain }
+      | { kind: 'global' }
+    >()
+  })
+
+  it('freezes evidence and external proposal provenance without MCP capability fields', () => {
+    expectTypeOf<ObserverEvidenceProvenance>().toEqualTypeOf<{
+      kind: 'observer-evidence'
+      evidenceIds: string[]
+    }>()
+    expectTypeOf<ExternalProposalProvenance>().toEqualTypeOf<{
+      kind: 'external-proposal'
+      channel: 'runtime-client' | 'mcp'
+      proposerId: string
+      proposalRef: string
+    }>()
+    expectTypeOf<CandidateProvenance>().toEqualTypeOf<
+      ObserverEvidenceProvenance | ExternalProposalProvenance
+    >()
+  })
+
+  it('freezes the versioned SHA-256 candidate key representation', () => {
+    expectTypeOf<CandidateIdempotencyKey>().toEqualTypeOf<{
+      version: 1
+      algorithm: 'sha256'
+      digest: string
+    }>()
+  })
+
+  it('separates stable profile ownership from host applicability context', () => {
+    expectTypeOf<PreferenceIdentity>().toEqualTypeOf<{
+      userId: string
+      companionId: string
+      relationshipId: string
+    }>()
+    expectTypeOf<PreferenceCandidate['identity']>().toEqualTypeOf<
+      PreferenceIdentity
+    >()
+    expectTypeOf<PreferenceRecord['identity']>().toEqualTypeOf<
+      PreferenceIdentity
+    >()
+  })
+
+  it('keeps confidence on candidates and authority only on records', () => {
+    expectTypeOf<PreferenceCandidate['confidence']>().toEqualTypeOf<number>()
+    expectTypeOf<PreferenceRecord['authority']>().toEqualTypeOf<
+      PreferenceAuthority
+    >()
+    expectTypeOf<PendingCandidateProposal['status']>().toEqualTypeOf<
+      'pending_confirmation'
+    >()
+  })
+
+  it('freezes every T2C1 schema output to its public type', () => {
+    expectTypeOf<v.InferOutput<typeof PreferenceSchema>>().toEqualTypeOf<Preference>()
+    expectTypeOf<
+      v.InferOutput<typeof PreferenceScopeSchema>
+    >().toEqualTypeOf<PreferenceScope>()
+    expectTypeOf<
+      v.InferOutput<typeof CandidateStatusSchema>
+    >().toEqualTypeOf<CandidateStatus>()
+    expectTypeOf<
+      v.InferOutput<typeof PreferenceStatusSchema>
+    >().toEqualTypeOf<PreferenceStatus>()
+    expectTypeOf<
+      v.InferOutput<typeof PreferenceCandidateSchema>
+    >().toEqualTypeOf<PreferenceCandidate>()
+    expectTypeOf<
+      v.InferOutput<typeof PreferenceIdentitySchema>
+    >().toEqualTypeOf<PreferenceIdentity>()
+    expectTypeOf<
+      v.InferOutput<typeof PendingCandidateProposalSchema>
+    >().toEqualTypeOf<PendingCandidateProposal>()
+    expectTypeOf<
+      v.InferOutput<typeof PreferenceRecordSchema>
+    >().toEqualTypeOf<PreferenceRecord>()
+    expectTypeOf<
+      v.InferOutput<typeof EffectiveProfileQuerySchema>
+    >().toEqualTypeOf<EffectiveProfileQuery>()
+    expectTypeOf<
+      v.InferOutput<typeof BehaviorGuidanceSchema>
+    >().toEqualTypeOf<BehaviorGuidance>()
+  })
+
+  it('freezes all governance command and receipt schema outputs', () => {
+    expectTypeOf<
+      v.InferOutput<typeof ProposeCandidateCommandSchema>
+    >().toEqualTypeOf<ProposeCandidateCommand>()
+    expectTypeOf<
+      v.InferOutput<typeof ConfirmCandidateCommandSchema>
+    >().toEqualTypeOf<ConfirmCandidateCommand>()
+    expectTypeOf<
+      v.InferOutput<typeof RejectCandidateCommandSchema>
+    >().toEqualTypeOf<RejectCandidateCommand>()
+    expectTypeOf<
+      v.InferOutput<typeof DeleteCandidateCommandSchema>
+    >().toEqualTypeOf<DeleteCandidateCommand>()
+    expectTypeOf<
+      v.InferOutput<typeof SuppressCandidateCommandSchema>
+    >().toEqualTypeOf<SuppressCandidateCommand>()
+    expectTypeOf<
+      v.InferOutput<typeof CreateExplicitPreferenceCommandSchema>
+    >().toEqualTypeOf<CreateExplicitPreferenceCommand>()
+    expectTypeOf<
+      v.InferOutput<typeof RevisePreferenceCommandSchema>
+    >().toEqualTypeOf<RevisePreferenceCommand>()
+    expectTypeOf<
+      v.InferOutput<typeof RevokePreferenceCommandSchema>
+    >().toEqualTypeOf<RevokePreferenceCommand>()
+    expectTypeOf<
+      v.InferOutput<typeof SupersededPreferenceExpectationSchema>
+    >().toEqualTypeOf<SupersededPreferenceExpectation>()
+    expectTypeOf<
+      v.InferOutput<typeof GovernanceMutationKindSchema>
+    >().toEqualTypeOf<GovernanceMutationKind>()
+    expectTypeOf<
+      v.InferOutput<typeof MutationReceiptResultSchema>
+    >().toEqualTypeOf<MutationReceiptResult>()
+    expectTypeOf<
+      v.InferOutput<typeof MutationReceiptSchema>
+    >().toEqualTypeOf<MutationReceipt>()
+  })
+})
+
+describe('PreferenceSchema closed seven-key union', () => {
+  it.each([
+    ['interaction.response_detail', ['concise', 'balanced', 'detailed']],
+    ['interaction.directness', ['gentle', 'balanced', 'direct']],
+    ['interaction.initiative', ['ask_first', 'low_risk_auto', 'proactive']],
+    [
+      'interaction.interruption_policy',
+      ['never_interrupt', 'important_only', 'allowed'],
+    ],
+    ['work.approval_style', ['always_ask', 'risk_based', 'review_after']],
+    ['work.verification_depth', ['minimal', 'targeted', 'exhaustive']],
+    [
+      'companion.support_style',
+      ['listen_first', 'acknowledge_then_act', 'direct_action'],
+    ],
+  ] as const)('accepts only values belonging to %s', (key, values) => {
+    for (const value of values) {
+      expect(v.safeParse(PreferenceSchema, { key, value }).success).toBe(true)
+    }
+    expect(
+      v.safeParse(PreferenceSchema, { key, value: 'free-form-value' }).success,
+    ).toBe(false)
+  })
+
+  it('rejects free-form and unknown preference keys', () => {
+    for (const input of [
+      { key: 'custom.preference', value: 'anything' },
+      { key: '', value: 'concise' },
+      { key: 'interaction.responseDetail', value: 'concise' },
+    ]) {
+      expect(v.safeParse(PreferenceSchema, input).success).toBe(false)
+    }
+  })
+
+  it('rejects unknown keys instead of stripping them', () => {
+    expect(
+      v.safeParse(PreferenceSchema, {
+        ...responseDetailPreferenceFixture,
+        explanation: 'free form',
+      }).success,
+    ).toBe(false)
+  })
+})
+
+describe('PreferenceScopeSchema', () => {
+  it('accepts exactly task, workspace, host, domain, and global scope', () => {
+    for (const input of [
+      { kind: 'task', taskId: 'task-1' },
+      workspacePreferenceScopeFixture,
+      { kind: 'host', hostId: 'airi' },
+      { kind: 'domain', domain: 'work' },
+      { kind: 'global' },
+    ]) {
+      expect(v.safeParse(PreferenceScopeSchema, input).success).toBe(true)
+    }
+  })
+
+  it('rejects missing identifiers, unknown scope kinds, and unknown domains', () => {
+    for (const input of [
+      { kind: 'task', taskId: '' },
+      { kind: 'workspace' },
+      { kind: 'project', projectId: 'project-1' },
+      { kind: 'domain', domain: 'personal' },
+    ]) {
+      expect(v.safeParse(PreferenceScopeSchema, input).success).toBe(false)
+    }
+  })
+
+  it('rejects fields belonging to another scope variant', () => {
+    expect(
+      v.safeParse(PreferenceScopeSchema, {
+        kind: 'global',
+        hostId: 'airi',
+      }).success,
+    ).toBe(false)
+  })
+})
+
+describe('candidate lifecycle and provenance schemas', () => {
+  it('accepts only the three-field stable preference identity', () => {
+    expect(v.parse(PreferenceIdentitySchema, preferenceIdentityFixture)).toEqual(
+      preferenceIdentityFixture,
+    )
+    expect(
+      v.safeParse(PreferenceIdentitySchema, {
+        ...preferenceIdentityFixture,
+        hostId: identityContextFixture.hostId,
+      }).success,
+    ).toBe(false)
+    expect(
+      v.safeParse(
+        PreferenceIdentitySchema,
+        omitKey(preferenceIdentityFixture, 'relationshipId'),
+      ).success,
+    ).toBe(false)
+  })
+
+  it('accepts the separate closed lifecycle enums', () => {
+    for (const status of [
+      'pending_confirmation',
+      'confirmed',
+      'rejected',
+      'superseded',
+      'deleted',
+    ]) {
+      expect(v.safeParse(CandidateStatusSchema, status).success).toBe(true)
+    }
+    for (const status of ['active', 'revoked']) {
+      expect(v.safeParse(CandidateStatusSchema, status).success).toBe(false)
+    }
+    for (const status of ['active', 'superseded', 'revoked', 'deleted']) {
+      expect(v.safeParse(PreferenceStatusSchema, status).success).toBe(true)
+    }
+    for (const status of ['pending_confirmation', 'confirmed', 'rejected']) {
+      expect(v.safeParse(PreferenceStatusSchema, status).success).toBe(false)
+    }
+  })
+
+  it('accepts strict observer-evidence and external proposal provenance', () => {
+    expect(
+      v.parse(
+        ObserverEvidenceProvenanceSchema,
+        observerEvidenceProvenanceFixture,
+      ),
+    ).toEqual(observerEvidenceProvenanceFixture)
+    expect(
+      v.parse(
+        ExternalProposalProvenanceSchema,
+        externalProposalProvenanceFixture,
+      ),
+    ).toEqual(externalProposalProvenanceFixture)
+    expect(
+      v.safeParse(CandidateProvenanceSchema, externalProposalProvenanceFixture)
+        .success,
+    ).toBe(true)
+  })
+
+  it('rejects arbitrary provenance and external claims of user confirmation', () => {
+    for (const input of [
+      { kind: 'model', prompt: 'private' },
+      { ...externalProposalProvenanceFixture, authority: 'user-confirmed' },
+      { ...externalProposalProvenanceFixture, confirmed: true },
+      { ...externalProposalProvenanceFixture, proposerId: '' },
+      { ...externalProposalProvenanceFixture, proposalRef: '' },
+    ]) {
+      expect(v.safeParse(CandidateProvenanceSchema, input).success).toBe(false)
+    }
+  })
+
+  it('requires a version-1 lowercase SHA-256 digest', () => {
+    expect(
+      v.parse(CandidateIdempotencyKeySchema, candidateIdempotencyKeyFixture),
+    ).toEqual(candidateIdempotencyKeyFixture)
+    for (const input of [
+      { ...candidateIdempotencyKeyFixture, version: 2 },
+      { ...candidateIdempotencyKeyFixture, algorithm: 'md5' },
+      { ...candidateIdempotencyKeyFixture, digest: 'not-a-digest' },
+      {
+        ...candidateIdempotencyKeyFixture,
+        digest: candidateIdempotencyKeyFixture.digest.toUpperCase(),
+      },
+    ]) {
+      expect(v.safeParse(CandidateIdempotencyKeySchema, input).success).toBe(
+        false,
+      )
+    }
+  })
+
+  it('accepts a complete strict pending candidate', () => {
+    expect(
+      v.parse(PreferenceCandidateSchema, preferenceCandidateFixture),
+    ).toEqual(preferenceCandidateFixture)
+  })
+
+  it('requires all candidate identity and governance fields', () => {
+    for (const field of [
+      'id',
+      'identity',
+      'preference',
+      'scope',
+      'projection',
+      'provenance',
+      'confidence',
+      'riskCategory',
+      'status',
+      'idempotencyKey',
+      'revision',
+      'createdAt',
+      'updatedAt',
+    ]) {
+      expect(
+        v.safeParse(
+          PreferenceCandidateSchema,
+          omitKey(preferenceCandidateFixture, field),
+        ).success,
+      ).toBe(false)
+    }
+  })
+
+  it('constrains confidence as evidence and never accepts it as authority', () => {
+    for (const confidence of [-0.01, 1.01, Number.NaN, Infinity, '0.8']) {
+      expect(
+        v.safeParse(PreferenceCandidateSchema, {
+          ...preferenceCandidateFixture,
+          confidence,
+        }).success,
+      ).toBe(false)
+    }
+    expect(
+      v.safeParse(PreferenceCandidateSchema, {
+        ...preferenceCandidateFixture,
+        authority: 'user-confirmed',
+      }).success,
+    ).toBe(false)
+  })
+
+  it('requires a non-negative safe candidate revision and ISO timestamps', () => {
+    for (const revision of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1, '0']) {
+      expect(
+        v.safeParse(PreferenceCandidateSchema, {
+          ...preferenceCandidateFixture,
+          revision,
+        }).success,
+      ).toBe(false)
+    }
+    expect(
+      v.safeParse(PreferenceCandidateSchema, {
+        ...preferenceCandidateFixture,
+        updatedAt: '2026-08-21T03:00:00',
+      }).success,
+    ).toBe(false)
+  })
+
+  it('requires observer provenance IDs to equal the normalized evidence IDs', () => {
+    expect(
+      v.safeParse(PreferenceCandidateSchema, {
+        ...preferenceCandidateFixture,
+        provenance: {
+          kind: 'observer-evidence',
+          evidenceIds: ['evidence-other'],
+        },
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rejects unknown candidate fields and schema versions', () => {
+    expect(
+      v.safeParse(PreferenceCandidateSchema, {
+        ...preferenceCandidateFixture,
+        schemaVersion: 2,
+      }).success,
+    ).toBe(false)
+    expect(
+      v.safeParse(PreferenceCandidateSchema, {
+        ...preferenceCandidateFixture,
+        modelPrompt: 'private',
+      }).success,
+    ).toBe(false)
+  })
+
+  it('accepts only pending proposal input and rejects already-confirmed Observer output', () => {
+    expect(
+      v.parse(PendingCandidateProposalSchema, pendingCandidateProposalFixture),
+    ).toEqual(pendingCandidateProposalFixture)
+    for (const status of ['confirmed', 'rejected', 'active']) {
+      expect(
+        v.safeParse(PendingCandidateProposalSchema, {
+          ...pendingCandidateProposalFixture,
+          status,
+        }).success,
+      ).toBe(false)
+    }
+    expect(
+      v.safeParse(PendingCandidateProposalSchema, {
+        ...pendingCandidateProposalFixture,
+        authority: 'user-confirmed',
+      }).success,
+    ).toBe(false)
+  })
+})
+
+describe('PreferenceRecordSchema authority, revision, and supersession', () => {
+  it('accepts a complete active user-authorized record', () => {
+    expect(
+      v.parse(PreferenceRecordSchema, activePreferenceRecordFixture),
+    ).toEqual(activePreferenceRecordFixture)
+  })
+
+  it('accepts only user-set or user-confirmed authority', () => {
+    expect(v.safeParse(PreferenceAuthoritySchema, 'user-set').success).toBe(true)
+    expect(v.safeParse(PreferenceAuthoritySchema, 'user-confirmed').success).toBe(
+      true,
+    )
+    for (const authority of ['observer', 'adapter', 'agent', 'confidence']) {
+      expect(v.safeParse(PreferenceAuthoritySchema, authority).success).toBe(
+        false,
+      )
+    }
+  })
+
+  it('requires positive safe lineage revisions', () => {
+    for (const revision of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '1']) {
+      expect(
+        v.safeParse(PreferenceRecordSchema, {
+          ...activePreferenceRecordFixture,
+          revision,
+        }).success,
+      ).toBe(false)
+    }
+  })
+
+  it('requires every revision after one to explicitly name its predecessor', () => {
+    expect(
+      v.safeParse(PreferenceRecordSchema, {
+        ...activePreferenceRecordFixture,
+        id: 'preference-2',
+        revision: 2,
+      }).success,
+    ).toBe(false)
+    expect(
+      v.safeParse(PreferenceRecordSchema, {
+        ...activePreferenceRecordFixture,
+        id: 'preference-2',
+        revision: 2,
+        supersedes: activePreferenceRecordFixture.id,
+      }).success,
+    ).toBe(true)
+  })
+
+  it('forbids a revision-one record from claiming a predecessor', () => {
+    expect(
+      v.safeParse(PreferenceRecordSchema, {
+        ...activePreferenceRecordFixture,
+        supersedes: 'preference-0',
+      }).success,
+    ).toBe(false)
+  })
+
+  it('requires superseded status and supersededBy to agree', () => {
+    expect(
+      v.safeParse(PreferenceRecordSchema, {
+        ...activePreferenceRecordFixture,
+        status: 'superseded',
+      }).success,
+    ).toBe(false)
+    expect(
+      v.safeParse(PreferenceRecordSchema, {
+        ...activePreferenceRecordFixture,
+        status: 'superseded',
+        supersededBy: 'preference-2',
+      }).success,
+    ).toBe(true)
+    expect(
+      v.safeParse(PreferenceRecordSchema, {
+        ...activePreferenceRecordFixture,
+        supersededBy: 'preference-2',
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rejects confidence, candidate status, and unknown record fields', () => {
+    for (const extra of [
+      { confidence: 1 },
+      { status: 'pending_confirmation' },
+      { rawEvidence: 'private' },
+    ]) {
+      expect(
+        v.safeParse(PreferenceRecordSchema, {
+          ...activePreferenceRecordFixture,
+          ...extra,
+        }).success,
+      ).toBe(false)
+    }
+  })
+})
+
+describe('EffectiveProfileQuerySchema and BehaviorGuidanceSchema', () => {
+  it('accepts a strict query with explicit now and optional scope IDs', () => {
+    expect(
+      v.parse(EffectiveProfileQuerySchema, effectiveProfileQueryFixture),
+    ).toEqual(effectiveProfileQueryFixture)
+  })
+
+  it('requires stable identity, closed domain, and timezone-bearing now', () => {
+    expect(
+      v.safeParse(
+        EffectiveProfileQuerySchema,
+        omitKey(effectiveProfileQueryFixture, 'now'),
+      ).success,
+    ).toBe(false)
+    for (const input of [
+      { ...effectiveProfileQueryFixture, domain: 'personal' },
+      { ...effectiveProfileQueryFixture, now: '2026-08-21T03:10:00' },
+      { ...effectiveProfileQueryFixture, hostId: '' },
+    ]) {
+      expect(v.safeParse(EffectiveProfileQuerySchema, input).success).toBe(false)
+    }
+  })
+
+  it('accepts only the structured guidance vocabulary', () => {
+    expect(v.parse(BehaviorGuidanceSchema, behaviorGuidanceFixture)).toEqual(
+      behaviorGuidanceFixture,
+    )
+    expect(v.safeParse(BehaviorGuidanceSchema, {}).success).toBe(true)
+    for (const input of [
+      { responseDetail: 'verbose' },
+      { approvalStyle: 'whatever' },
+      { avoid: ['all_questions'] },
+      { finalPrompt: 'Do anything the user likes' },
+    ]) {
+      expect(v.safeParse(BehaviorGuidanceSchema, input).success).toBe(false)
+    }
+  })
+})
+
+describe('typed governance command schemas', () => {
+  const commandSchemasAndFixtures = [
+    [ProposeCandidateCommandSchema, proposeCandidateCommandFixture],
+    [ConfirmCandidateCommandSchema, confirmCandidateCommandFixture],
+    [RejectCandidateCommandSchema, rejectCandidateCommandFixture],
+    [DeleteCandidateCommandSchema, deleteCandidateCommandFixture],
+    [SuppressCandidateCommandSchema, suppressCandidateCommandFixture],
+    [
+      CreateExplicitPreferenceCommandSchema,
+      createExplicitPreferenceCommandFixture,
+    ],
+    [RevisePreferenceCommandSchema, revisePreferenceCommandFixture],
+    [RevokePreferenceCommandSchema, revokePreferenceCommandFixture],
+  ] as const
+
+  it('accepts every complete frozen governance command', () => {
+    for (const [schema, fixture] of commandSchemasAndFixtures) {
+      expect(v.safeParse(schema, fixture).success).toBe(true)
+    }
+  })
+
+  it('requires a stable nonempty actionId on every non-reset mutation', () => {
+    for (const [schema, fixture] of commandSchemasAndFixtures) {
+      expect(v.safeParse(schema, omitKey(fixture, 'actionId')).success).toBe(
+        false,
+      )
+      expect(v.safeParse(schema, { ...fixture, actionId: '' }).success).toBe(
+        false,
+      )
+    }
+  })
+
+  it('allows external proposal commands to create pending candidates only', () => {
+    expect(
+      v.parse(ProposeCandidateCommandSchema, proposeCandidateCommandFixture),
+    ).toEqual(proposeCandidateCommandFixture)
+    for (const extra of [
+      { status: 'confirmed' },
+      { authority: 'user-confirmed' },
+      { confirmedAt: '2026-08-21T03:11:00Z' },
+    ]) {
+      expect(
+        v.safeParse(ProposeCandidateCommandSchema, {
+          ...proposeCandidateCommandFixture,
+          ...extra,
+        }).success,
+      ).toBe(false)
+    }
+    expect(
+      v.safeParse(ProposeCandidateCommandSchema, {
+        ...proposeCandidateCommandFixture,
+        provenance: observerEvidenceProvenanceFixture,
+      }).success,
+    ).toBe(false)
+  })
+
+  it('requires expected candidate revisions for confirm/reject/delete/suppress', () => {
+    for (const [schema, fixture] of [
+      [ConfirmCandidateCommandSchema, confirmCandidateCommandFixture],
+      [RejectCandidateCommandSchema, rejectCandidateCommandFixture],
+      [DeleteCandidateCommandSchema, deleteCandidateCommandFixture],
+      [SuppressCandidateCommandSchema, suppressCandidateCommandFixture],
+    ] as const) {
+      expect(
+        v.safeParse(schema, omitKey(fixture, 'expectedCandidateRevision')).success,
+      ).toBe(false)
+      expect(
+        v.safeParse(schema, { ...fixture, expectedCandidateRevision: -1 })
+          .success,
+      ).toBe(false)
+    }
+  })
+
+  it('freezes an explicit paired supersession expectation during confirm', () => {
+    const expectation = {
+      preferenceId: activePreferenceRecordFixture.id,
+      expectedRevision: activePreferenceRecordFixture.revision,
+    }
+    expect(
+      v.parse(SupersededPreferenceExpectationSchema, expectation),
+    ).toEqual(expectation)
+    expect(
+      v.safeParse(ConfirmCandidateCommandSchema, {
+        ...confirmCandidateCommandFixture,
+        supersedesPreference: expectation,
+      }).success,
+    ).toBe(true)
+    expect(
+      v.safeParse(ConfirmCandidateCommandSchema, {
+        ...confirmCandidateCommandFixture,
+        supersedesPreference: {
+          preferenceId: activePreferenceRecordFixture.id,
+        },
+      }).success,
+    ).toBe(false)
+  })
+
+  it('prevents explicit creation from silently replacing an active slot', () => {
+    expect(
+      v.parse(
+        CreateExplicitPreferenceCommandSchema,
+        createExplicitPreferenceCommandFixture,
+      ),
+    ).toEqual(createExplicitPreferenceCommandFixture)
+    for (const expectedNoActivePreference of [false, 1, 'true']) {
+      expect(
+        v.safeParse(CreateExplicitPreferenceCommandSchema, {
+          ...createExplicitPreferenceCommandFixture,
+          expectedNoActivePreference,
+        }).success,
+      ).toBe(false)
+    }
+  })
+
+  it('requires explicit predecessor revision and a different replacement ID', () => {
+    expect(
+      v.parse(RevisePreferenceCommandSchema, revisePreferenceCommandFixture),
+    ).toEqual(revisePreferenceCommandFixture)
+    expect(
+      v.safeParse(
+        RevisePreferenceCommandSchema,
+        omitKey(revisePreferenceCommandFixture, 'expectedPreferenceRevision'),
+      ).success,
+    ).toBe(false)
+    expect(
+      v.safeParse(RevisePreferenceCommandSchema, {
+        ...revisePreferenceCommandFixture,
+        replacementPreferenceId: revisePreferenceCommandFixture.preferenceId,
+      }).success,
+    ).toBe(false)
+  })
+
+  it('requires positive expected preference revisions for revise and revoke', () => {
+    for (const [schema, fixture] of [
+      [RevisePreferenceCommandSchema, revisePreferenceCommandFixture],
+      [RevokePreferenceCommandSchema, revokePreferenceCommandFixture],
+    ] as const) {
+      for (const expectedPreferenceRevision of [0, -1, 1.5, '1']) {
+        expect(
+          v.safeParse(schema, { ...fixture, expectedPreferenceRevision }).success,
+        ).toBe(false)
+      }
+    }
+  })
+
+  it('rejects unknown fields on every governance command', () => {
+    for (const [schema, fixture] of commandSchemasAndFixtures) {
+      expect(
+        v.safeParse(schema, { ...fixture, arbitrary: true }).success,
+      ).toBe(false)
+    }
+  })
+})
+
+describe('MutationReceiptSchema', () => {
+  it('accepts a content-free replay receipt for a governed command', () => {
+    expect(v.parse(MutationReceiptSchema, mutationReceiptFixture)).toEqual(
+      mutationReceiptFixture,
+    )
+  })
+
+  it('accepts only the eight frozen mutation kinds', () => {
+    for (const mutation of [
+      'propose-candidate',
+      'confirm-candidate',
+      'reject-candidate',
+      'delete-candidate',
+      'suppress-candidate',
+      'create-explicit-preference',
+      'revise-preference',
+      'revoke-preference',
+    ]) {
+      expect(v.safeParse(GovernanceMutationKindSchema, mutation).success).toBe(
+        true,
+      )
+    }
+    expect(v.safeParse(GovernanceMutationKindSchema, 'reset').success).toBe(
+      false,
+    )
+  })
+
+  it('requires non-sensitive typed results and a lowercase SHA-256 payload hash', () => {
+    expect(
+      v.safeParse(MutationReceiptResultSchema, { kind: 'none' }).success,
+    ).toBe(true)
+    for (const input of [
+      { ...mutationReceiptFixture, payloadHash: 'not-a-hash' },
+      {
+        ...mutationReceiptFixture,
+        payloadHash: mutationReceiptFixture.payloadHash.toUpperCase(),
+      },
+      { ...mutationReceiptFixture, actionId: '' },
+      { ...mutationReceiptFixture, recordedAt: '2026-08-21T03:12:01' },
+      { ...mutationReceiptFixture, requestPayload: { private: true } },
+    ]) {
+      expect(v.safeParse(MutationReceiptSchema, input).success).toBe(false)
     }
   })
 })
