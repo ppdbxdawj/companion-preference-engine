@@ -36,6 +36,12 @@ importers:
         specifier: 1.4.2
         version: 1.4.2(typescript@5.9.3)
 
+  packages/preference-core:
+    dependencies:
+      '@companion-preference/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
 packages:
 
   '@babel/generator@8.0.0-rc.3':
