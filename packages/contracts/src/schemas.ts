@@ -496,6 +496,8 @@ export type GovernanceMutationKind =
   | 'create-explicit-preference'
   | 'revise-preference'
   | 'revoke-preference'
+  | 'update-connection-settings'
+  | 'report-projection-status'
 
 export type MutationReceiptResult =
   | { kind: 'candidate'; candidateId: string; revision: number }
@@ -508,6 +510,162 @@ export type MutationReceipt = {
   payloadHash: string
   result: MutationReceiptResult
   recordedAt: string
+}
+
+export type AdapterConnectionState =
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'reconnecting'
+  | 'error'
+
+export type ProjectionDeliveryState =
+  | 'locally-written'
+  | 'verified-applied'
+  | 'tombstone-locally-written'
+  | 'verified-guidance-absent'
+  | 'error'
+
+export type ProjectionDetailCode =
+  | 'guidance-local-write-completed'
+  | 'guidance-snapshot-verified'
+  | 'tombstone-local-write-completed'
+  | 'guidance-absence-snapshot-verified'
+  | 'guidance-absence-manually-verified'
+  | 'transport-write-failed'
+  | 'verification-failed'
+  | 'transport-disconnected'
+  | 'runtime-unavailable'
+
+type AdapterProjectionStatusBase = {
+  schemaVersion: 1
+  identity: PreferenceIdentity
+  hostId: string
+  domain: Domain
+  settingsRevision: number
+  connectionState: AdapterConnectionState
+  lastAttemptAt: string
+  detailCode: ProjectionDetailCode
+  reportedAt: string
+}
+
+/**
+ * Adapter-reported delivery truth for one profile owner, host, and domain.
+ * A local write is deliberately distinct from verified application, and a
+ * blank tombstone write is deliberately distinct from verified absence.
+ */
+export type AdapterProjectionStatus = AdapterProjectionStatusBase &
+  (
+    | {
+        state: 'locally-written' | 'verified-applied'
+        lastGuidanceHash: string
+      }
+    | {
+        state:
+          | 'tombstone-locally-written'
+          | 'verified-guidance-absent'
+        lastGuidanceHash?: never
+      }
+    | { state: 'error'; lastGuidanceHash?: string }
+  )
+
+/**
+ * Canonical connection settings are owned by the stable profile identity plus
+ * host. Session and domain are event/query applicability, not connection
+ * ownership. A retained projection status may lag, but never lead, revision.
+ */
+export type ConnectionSettings = {
+  schemaVersion: 1
+  identity: PreferenceIdentity
+  hostId: string
+  collectionPolicy: CollectionPolicy
+  outboundInferencePolicy: OutboundInferencePolicy
+  projectionPolicy: ProjectionPolicy
+  observeEnabled: boolean
+  learnEnabled: boolean
+  applyEnabled: boolean
+  revision: number
+  projectionStatus?: AdapterProjectionStatus
+  updatedAt: string
+}
+
+export type UpdateConnectionSettingsCommand = {
+  actionId: string
+  identity: PreferenceIdentity
+  hostId: string
+  expectedSettingsRevision: number
+  patch: {
+    collectionPolicy?: CollectionPolicy
+    outboundInferencePolicy?: OutboundInferencePolicy
+    projectionPolicy?: ProjectionPolicy
+    observeEnabled?: boolean
+    learnEnabled?: boolean
+    applyEnabled?: boolean
+  }
+  occurredAt: string
+}
+
+type ProjectionStatusReportBase = {
+  actionId: string
+  identity: PreferenceIdentity
+  hostId: string
+  domain: Domain
+  expectedSettingsRevision: number
+  connectionState: AdapterConnectionState
+  lastAttemptAt: string
+  detailCode: ProjectionDetailCode
+  occurredAt: string
+}
+
+export type ReportProjectionStatusCommand = ProjectionStatusReportBase &
+  (
+    | {
+        state: 'locally-written' | 'verified-applied'
+        lastGuidanceHash: string
+      }
+    | {
+        state:
+          | 'tombstone-locally-written'
+          | 'verified-guidance-absent'
+        lastGuidanceHash?: never
+      }
+    | { state: 'error'; lastGuidanceHash?: string }
+  )
+
+export type ContentFreePolicyStage =
+  | 'collection'
+  | 'learning'
+  | 'outbound-inference'
+  | 'projection'
+
+export type ContentFreePolicyOutcome = 'denied' | 'discarded'
+
+export type ContentFreePolicyReasonCode =
+  | 'observe-disabled'
+  | 'collection-disabled'
+  | 'learning-disabled'
+  | 'outbound-inference-disabled'
+  | 'outbound-source-not-allowed'
+  | 'projection-disabled'
+  | 'projection-scope-not-allowed'
+  | 'stale-settings-revision'
+  | 'late-result-discarded'
+
+/**
+ * A deliberately content-free audit input. It identifies only the connection,
+ * domain, canonical settings revision, decision class, and fixed reason code.
+ */
+export type ContentFreePolicyDecision = {
+  schemaVersion: 1
+  decisionId: string
+  identity: PreferenceIdentity
+  hostId: string
+  domain: Domain
+  settingsRevision: number
+  stage: ContentFreePolicyStage
+  outcome: ContentFreePolicyOutcome
+  reasonCode: ContentFreePolicyReasonCode
+  occurredAt: string
 }
 
 // TODO(T2C1): replace only these compile-valid permissive schema bodies. The
@@ -554,6 +712,291 @@ export const SuppressCandidateCommandSchema = v.strictObject({...baseCommand,can
 export const CreateExplicitPreferenceCommandSchema = v.strictObject({...baseCommand,preferenceId:id,identity:PreferenceIdentitySchema,preference:PreferenceSchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,expectedNoActivePreference:v.literal(true),evidenceIds:v.array(id),expiresAt:v.optional(iso)})
 export const RevisePreferenceCommandSchema = v.pipe(v.strictObject({...baseCommand,preferenceId:id,expectedPreferenceRevision:rev1,replacementPreferenceId:id,preference:PreferenceSchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,evidenceIds:v.array(id),expiresAt:v.optional(iso)}),v.check(x=>x.replacementPreferenceId!==x.preferenceId))
 export const RevokePreferenceCommandSchema = v.strictObject({...baseCommand,preferenceId:id,expectedPreferenceRevision:rev1,reasonCode:v.optional(id)})
-export const GovernanceMutationKindSchema = v.picklist(['propose-candidate','confirm-candidate','reject-candidate','delete-candidate','suppress-candidate','create-explicit-preference','revise-preference','revoke-preference'])
+export const GovernanceMutationKindSchema = v.picklist(['propose-candidate','confirm-candidate','reject-candidate','delete-candidate','suppress-candidate','create-explicit-preference','revise-preference','revoke-preference','update-connection-settings','report-projection-status'])
 export const MutationReceiptResultSchema = v.variant('kind',[v.strictObject({kind:v.literal('candidate'),candidateId:id,revision:rev0}),v.strictObject({kind:v.literal('preference'),preferenceId:id,revision:rev1}),v.strictObject({kind:v.literal('none')})])
 export const MutationReceiptSchema = v.strictObject({actionId:id,mutation:GovernanceMutationKindSchema,payloadHash:v.pipe(v.string(),v.regex(/^[0-9a-f]{64}$/)),result:MutationReceiptResultSchema,recordedAt:iso})
+
+// TODO(T2C2A): the low-tier implementer replaces only the schema bodies in this
+// region. Public types, fixtures, and behavioral RED oracles are high-tier
+// owned.
+const sha256 = v.pipe(v.string(), v.regex(/^[0-9a-f]{64}$/))
+export const AdapterConnectionStateSchema = v.picklist(['connecting', 'connected', 'disconnected', 'reconnecting', 'error']) as v.GenericSchema<AdapterConnectionState>
+export const ProjectionDeliveryStateSchema = v.picklist([
+  'locally-written',
+  'verified-applied',
+  'tombstone-locally-written',
+  'verified-guidance-absent',
+  'error',
+]) as v.GenericSchema<ProjectionDeliveryState>
+export const ProjectionDetailCodeSchema = v.picklist([
+  'guidance-local-write-completed',
+  'guidance-snapshot-verified',
+  'tombstone-local-write-completed',
+  'guidance-absence-snapshot-verified',
+  'guidance-absence-manually-verified',
+  'transport-write-failed',
+  'verification-failed',
+  'transport-disconnected',
+  'runtime-unavailable',
+]) as v.GenericSchema<ProjectionDetailCode>
+export const AdapterProjectionStatusSchema = v.union([
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    settingsRevision: rev0,
+    connectionState: AdapterConnectionStateSchema,
+    lastAttemptAt: iso,
+    detailCode: v.literal('guidance-local-write-completed'),
+    reportedAt: iso,
+    state: v.literal('locally-written'),
+    lastGuidanceHash: sha256,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    settingsRevision: rev0,
+    connectionState: AdapterConnectionStateSchema,
+    lastAttemptAt: iso,
+    detailCode: v.literal('guidance-snapshot-verified'),
+    reportedAt: iso,
+    state: v.literal('verified-applied'),
+    lastGuidanceHash: sha256,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    settingsRevision: rev0,
+    connectionState: AdapterConnectionStateSchema,
+    lastAttemptAt: iso,
+    detailCode: v.literal('tombstone-local-write-completed'),
+    reportedAt: iso,
+    state: v.literal('tombstone-locally-written'),
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    settingsRevision: rev0,
+    connectionState: AdapterConnectionStateSchema,
+    lastAttemptAt: iso,
+    detailCode: v.picklist(['guidance-absence-snapshot-verified', 'guidance-absence-manually-verified']),
+    reportedAt: iso,
+    state: v.literal('verified-guidance-absent'),
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    settingsRevision: rev0,
+    connectionState: AdapterConnectionStateSchema,
+    lastAttemptAt: iso,
+    detailCode: v.picklist(['transport-write-failed', 'verification-failed', 'transport-disconnected', 'runtime-unavailable']),
+    reportedAt: iso,
+    state: v.literal('error'),
+    lastGuidanceHash: v.optional(sha256),
+  }),
+]) as v.GenericSchema<AdapterProjectionStatus>
+export const ConnectionSettingsSchema = v.pipe(
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    collectionPolicy: CollectionPolicySchema,
+    outboundInferencePolicy: OutboundInferencePolicySchema,
+    projectionPolicy: ProjectionPolicySchema,
+    observeEnabled: v.boolean(),
+    learnEnabled: v.boolean(),
+    applyEnabled: v.boolean(),
+    revision: rev0,
+    projectionStatus: v.optional(AdapterProjectionStatusSchema),
+    updatedAt: iso,
+  }),
+  v.check((input) => {
+    if (!input.projectionStatus) return true
+    return (
+      input.projectionStatus.identity.userId === input.identity.userId &&
+      input.projectionStatus.identity.companionId === input.identity.companionId &&
+      input.projectionStatus.identity.relationshipId === input.identity.relationshipId &&
+      input.projectionStatus.hostId === input.hostId &&
+      input.projectionStatus.settingsRevision <= input.revision
+    )
+  }),
+) as v.GenericSchema<ConnectionSettings>
+export const UpdateConnectionSettingsCommandSchema = v.strictObject({
+  actionId: id,
+  identity: PreferenceIdentitySchema,
+  hostId: id,
+  expectedSettingsRevision: rev0,
+  patch: v.pipe(
+    v.strictObject({
+      collectionPolicy: v.optional(CollectionPolicySchema),
+      outboundInferencePolicy: v.optional(OutboundInferencePolicySchema),
+      projectionPolicy: v.optional(ProjectionPolicySchema),
+      observeEnabled: v.optional(v.boolean()),
+      learnEnabled: v.optional(v.boolean()),
+      applyEnabled: v.optional(v.boolean()),
+    }),
+    v.check((patch) => Object.keys(patch).length > 0),
+  ),
+  occurredAt: iso,
+}) as v.GenericSchema<UpdateConnectionSettingsCommand>
+export const ReportProjectionStatusCommandSchema = v.union([
+  v.strictObject({
+    actionId: id,
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    expectedSettingsRevision: rev0,
+    connectionState: AdapterConnectionStateSchema,
+    lastAttemptAt: iso,
+    detailCode: v.literal('guidance-local-write-completed'),
+    occurredAt: iso,
+    state: v.literal('locally-written'),
+    lastGuidanceHash: sha256,
+  }),
+  v.strictObject({
+    actionId: id,
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    expectedSettingsRevision: rev0,
+    connectionState: AdapterConnectionStateSchema,
+    lastAttemptAt: iso,
+    detailCode: v.literal('guidance-snapshot-verified'),
+    occurredAt: iso,
+    state: v.literal('verified-applied'),
+    lastGuidanceHash: sha256,
+  }),
+  v.strictObject({
+    actionId: id,
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    expectedSettingsRevision: rev0,
+    connectionState: AdapterConnectionStateSchema,
+    lastAttemptAt: iso,
+    detailCode: v.literal('tombstone-local-write-completed'),
+    occurredAt: iso,
+    state: v.literal('tombstone-locally-written'),
+  }),
+  v.strictObject({
+    actionId: id,
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    expectedSettingsRevision: rev0,
+    connectionState: AdapterConnectionStateSchema,
+    lastAttemptAt: iso,
+    detailCode: v.picklist(['guidance-absence-snapshot-verified', 'guidance-absence-manually-verified']),
+    occurredAt: iso,
+    state: v.literal('verified-guidance-absent'),
+  }),
+  v.strictObject({
+    actionId: id,
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    expectedSettingsRevision: rev0,
+    connectionState: AdapterConnectionStateSchema,
+    lastAttemptAt: iso,
+    detailCode: v.picklist(['transport-write-failed', 'verification-failed', 'transport-disconnected', 'runtime-unavailable']),
+    occurredAt: iso,
+    state: v.literal('error'),
+    lastGuidanceHash: v.optional(sha256),
+  }),
+]) as v.GenericSchema<ReportProjectionStatusCommand>
+export const ContentFreePolicyStageSchema = v.picklist(['collection', 'learning', 'outbound-inference', 'projection']) as v.GenericSchema<ContentFreePolicyStage>
+export const ContentFreePolicyOutcomeSchema = v.picklist(['denied', 'discarded']) as v.GenericSchema<ContentFreePolicyOutcome>
+export const ContentFreePolicyReasonCodeSchema = v.picklist([
+  'observe-disabled',
+  'collection-disabled',
+  'learning-disabled',
+  'outbound-inference-disabled',
+  'outbound-source-not-allowed',
+  'projection-disabled',
+  'projection-scope-not-allowed',
+  'stale-settings-revision',
+  'late-result-discarded',
+]) as v.GenericSchema<ContentFreePolicyReasonCode>
+export const ContentFreePolicyDecisionSchema = v.union([
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    decisionId: id,
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    settingsRevision: rev0,
+    stage: v.literal('collection'),
+    outcome: v.literal('denied'),
+    reasonCode: v.picklist(['observe-disabled', 'collection-disabled']),
+    occurredAt: iso,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    decisionId: id,
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    settingsRevision: rev0,
+    stage: v.literal('learning'),
+    outcome: v.literal('denied'),
+    reasonCode: v.literal('learning-disabled'),
+    occurredAt: iso,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    decisionId: id,
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    settingsRevision: rev0,
+    stage: v.literal('outbound-inference'),
+    outcome: v.literal('denied'),
+    reasonCode: v.picklist(['outbound-inference-disabled', 'outbound-source-not-allowed']),
+    occurredAt: iso,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    decisionId: id,
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    settingsRevision: rev0,
+    stage: v.literal('outbound-inference'),
+    outcome: v.literal('discarded'),
+    reasonCode: v.picklist(['stale-settings-revision', 'late-result-discarded']),
+    occurredAt: iso,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    decisionId: id,
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    settingsRevision: rev0,
+    stage: v.literal('projection'),
+    outcome: v.literal('denied'),
+    reasonCode: v.picklist(['projection-disabled', 'projection-scope-not-allowed']),
+    occurredAt: iso,
+  }),
+  v.strictObject({
+    schemaVersion: v.literal(1),
+    decisionId: id,
+    identity: PreferenceIdentitySchema,
+    hostId: id,
+    domain: DomainSchema,
+    settingsRevision: rev0,
+    stage: v.literal('projection'),
+    outcome: v.literal('discarded'),
+    reasonCode: v.literal('stale-settings-revision'),
+    occurredAt: iso,
+  }),
+]) as v.GenericSchema<ContentFreePolicyDecision>

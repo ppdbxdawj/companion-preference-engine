@@ -54,10 +54,17 @@ import {
   remoteOutboundInferencePolicyFixture,
 } from './fixtures.js'
 import {
+  AdapterConnectionStateSchema,
+  AdapterProjectionStatusSchema,
   BehaviorGuidanceSchema,
   CandidateIdempotencyKeySchema,
   CandidateProvenanceSchema,
   CandidateStatusSchema,
+  ConnectionSettingsSchema,
+  ContentFreePolicyDecisionSchema,
+  ContentFreePolicyOutcomeSchema,
+  ContentFreePolicyReasonCodeSchema,
+  ContentFreePolicyStageSchema,
   ConfirmCandidateCommandSchema,
   CreateExplicitPreferenceCommandSchema,
   DeleteCandidateCommandSchema,
@@ -76,16 +83,27 @@ import {
   PreferenceSchema,
   PreferenceScopeSchema,
   PreferenceStatusSchema,
+  ProjectionDeliveryStateSchema,
+  ProjectionDetailCodeSchema,
   ProposeCandidateCommandSchema,
+  ReportProjectionStatusCommandSchema,
   RejectCandidateCommandSchema,
   RevisePreferenceCommandSchema,
   RevokePreferenceCommandSchema,
   SupersededPreferenceExpectationSchema,
   SuppressCandidateCommandSchema,
+  UpdateConnectionSettingsCommandSchema,
+  type AdapterConnectionState,
+  type AdapterProjectionStatus,
   type BehaviorGuidance,
   type CandidateIdempotencyKey,
   type CandidateProvenance,
   type CandidateStatus,
+  type ConnectionSettings,
+  type ContentFreePolicyDecision,
+  type ContentFreePolicyOutcome,
+  type ContentFreePolicyReasonCode,
+  type ContentFreePolicyStage,
   type ConfirmCandidateCommand,
   type CreateExplicitPreferenceCommand,
   type DeleteCandidateCommand,
@@ -104,18 +122,25 @@ import {
   type PreferenceRiskCategory,
   type PreferenceScope,
   type PreferenceStatus,
+  type ProjectionDeliveryState,
+  type ProjectionDetailCode,
   type ProposeCandidateCommand,
+  type ReportProjectionStatusCommand,
   type RejectCandidateCommand,
   type RevisePreferenceCommand,
   type RevokePreferenceCommand,
   type SupersededPreferenceExpectation,
   type SuppressCandidateCommand,
+  type UpdateConnectionSettingsCommand,
 } from './schemas.js'
 import {
   activePreferenceRecordFixture,
+  adapterProjectionStatusFixture,
   behaviorGuidanceFixture,
   candidateIdempotencyKeyFixture,
   confirmCandidateCommandFixture,
+  connectionSettingsFixture,
+  contentFreePolicyDecisionFixture,
   createExplicitPreferenceCommandFixture,
   deleteCandidateCommandFixture,
   effectiveProfileQueryFixture,
@@ -127,10 +152,12 @@ import {
   preferenceIdentityFixture,
   proposeCandidateCommandFixture,
   rejectCandidateCommandFixture,
+  reportProjectionStatusCommandFixture,
   responseDetailPreferenceFixture,
   revisePreferenceCommandFixture,
   revokePreferenceCommandFixture,
   suppressCandidateCommandFixture,
+  updateConnectionSettingsCommandFixture,
   workspacePreferenceScopeFixture,
 } from './fixtures.js'
 
@@ -1829,7 +1856,7 @@ describe('MutationReceiptSchema', () => {
     )
   })
 
-  it('accepts only the eight frozen mutation kinds', () => {
+  it('accepts only the ten frozen mutation kinds', () => {
     for (const mutation of [
       'propose-candidate',
       'confirm-candidate',
@@ -1839,6 +1866,8 @@ describe('MutationReceiptSchema', () => {
       'create-explicit-preference',
       'revise-preference',
       'revoke-preference',
+      'update-connection-settings',
+      'report-projection-status',
     ]) {
       expect(v.safeParse(GovernanceMutationKindSchema, mutation).success).toBe(
         true,
@@ -1865,5 +1894,324 @@ describe('MutationReceiptSchema', () => {
     ]) {
       expect(v.safeParse(MutationReceiptSchema, input).success).toBe(false)
     }
+  })
+})
+
+describe('T2C2A connection and content-free public contract types', () => {
+  it('freezes the closed connection, projection, and policy-decision enums', () => {
+    expectTypeOf<AdapterConnectionState>().toEqualTypeOf<
+      'connecting' | 'connected' | 'disconnected' | 'reconnecting' | 'error'
+    >()
+    expectTypeOf<ProjectionDeliveryState>().toEqualTypeOf<
+      | 'locally-written'
+      | 'verified-applied'
+      | 'tombstone-locally-written'
+      | 'verified-guidance-absent'
+      | 'error'
+    >()
+    expectTypeOf<ProjectionDetailCode>().toEqualTypeOf<
+      | 'guidance-local-write-completed'
+      | 'guidance-snapshot-verified'
+      | 'tombstone-local-write-completed'
+      | 'guidance-absence-snapshot-verified'
+      | 'guidance-absence-manually-verified'
+      | 'transport-write-failed'
+      | 'verification-failed'
+      | 'transport-disconnected'
+      | 'runtime-unavailable'
+    >()
+    expectTypeOf<ContentFreePolicyStage>().toEqualTypeOf<
+      'collection' | 'learning' | 'outbound-inference' | 'projection'
+    >()
+    expectTypeOf<ContentFreePolicyOutcome>().toEqualTypeOf<
+      'denied' | 'discarded'
+    >()
+    expectTypeOf<ContentFreePolicyReasonCode>().toEqualTypeOf<
+      | 'observe-disabled'
+      | 'collection-disabled'
+      | 'learning-disabled'
+      | 'outbound-inference-disabled'
+      | 'outbound-source-not-allowed'
+      | 'projection-disabled'
+      | 'projection-scope-not-allowed'
+      | 'stale-settings-revision'
+      | 'late-result-discarded'
+    >()
+  })
+
+  it('freezes connection ownership, commands, and content-free decision shapes', () => {
+    expectTypeOf<ConnectionSettings>().toEqualTypeOf<{
+      schemaVersion: 1
+      identity: PreferenceIdentity
+      hostId: string
+      collectionPolicy: CollectionPolicy
+      outboundInferencePolicy: OutboundInferencePolicy
+      projectionPolicy: ProjectionPolicy
+      observeEnabled: boolean
+      learnEnabled: boolean
+      applyEnabled: boolean
+      revision: number
+      projectionStatus?: AdapterProjectionStatus
+      updatedAt: string
+    }>()
+    expectTypeOf<UpdateConnectionSettingsCommand>().toEqualTypeOf<{
+      actionId: string
+      identity: PreferenceIdentity
+      hostId: string
+      expectedSettingsRevision: number
+      patch: {
+        collectionPolicy?: CollectionPolicy
+        outboundInferencePolicy?: OutboundInferencePolicy
+        projectionPolicy?: ProjectionPolicy
+        observeEnabled?: boolean
+        learnEnabled?: boolean
+        applyEnabled?: boolean
+      }
+      occurredAt: string
+    }>()
+    expectTypeOf<ContentFreePolicyDecision>().toEqualTypeOf<{
+      schemaVersion: 1
+      decisionId: string
+      identity: PreferenceIdentity
+      hostId: string
+      domain: Domain
+      settingsRevision: number
+      stage: ContentFreePolicyStage
+      outcome: ContentFreePolicyOutcome
+      reasonCode: ContentFreePolicyReasonCode
+      occurredAt: string
+    }>()
+    expectTypeOf<ReportProjectionStatusCommand>().toEqualTypeOf<
+      {
+      actionId: string
+      identity: PreferenceIdentity
+      hostId: string
+      domain: Domain
+      expectedSettingsRevision: number
+      connectionState: AdapterConnectionState
+      lastAttemptAt: string
+      detailCode: ProjectionDetailCode
+      occurredAt: string
+      } & (
+        | {
+            state: 'locally-written' | 'verified-applied'
+            lastGuidanceHash: string
+          }
+        | {
+            state:
+              | 'tombstone-locally-written'
+              | 'verified-guidance-absent'
+            lastGuidanceHash?: never
+          }
+        | { state: 'error'; lastGuidanceHash?: string }
+      )
+    >()
+  })
+
+  it('keeps schema outputs equal to their frozen exported types', () => {
+    expectTypeOf<v.InferOutput<typeof AdapterConnectionStateSchema>>().toEqualTypeOf<AdapterConnectionState>()
+    expectTypeOf<v.InferOutput<typeof ProjectionDeliveryStateSchema>>().toEqualTypeOf<ProjectionDeliveryState>()
+    expectTypeOf<v.InferOutput<typeof ProjectionDetailCodeSchema>>().toEqualTypeOf<ProjectionDetailCode>()
+    expectTypeOf<v.InferOutput<typeof AdapterProjectionStatusSchema>>().toEqualTypeOf<AdapterProjectionStatus>()
+    expectTypeOf<v.InferOutput<typeof ConnectionSettingsSchema>>().toEqualTypeOf<ConnectionSettings>()
+    expectTypeOf<v.InferOutput<typeof UpdateConnectionSettingsCommandSchema>>().toEqualTypeOf<UpdateConnectionSettingsCommand>()
+    expectTypeOf<v.InferOutput<typeof ReportProjectionStatusCommandSchema>>().toEqualTypeOf<ReportProjectionStatusCommand>()
+    expectTypeOf<v.InferOutput<typeof ContentFreePolicyStageSchema>>().toEqualTypeOf<ContentFreePolicyStage>()
+    expectTypeOf<v.InferOutput<typeof ContentFreePolicyOutcomeSchema>>().toEqualTypeOf<ContentFreePolicyOutcome>()
+    expectTypeOf<v.InferOutput<typeof ContentFreePolicyReasonCodeSchema>>().toEqualTypeOf<ContentFreePolicyReasonCode>()
+    expectTypeOf<v.InferOutput<typeof ContentFreePolicyDecisionSchema>>().toEqualTypeOf<ContentFreePolicyDecision>()
+  })
+})
+
+describe('T2C2A strict connection settings and projection status oracles', () => {
+  it('accepts the frozen fixtures', () => {
+    expect(v.parse(AdapterProjectionStatusSchema, adapterProjectionStatusFixture)).toEqual(adapterProjectionStatusFixture)
+    expect(v.parse(ConnectionSettingsSchema, connectionSettingsFixture)).toEqual(connectionSettingsFixture)
+    expect(v.parse(UpdateConnectionSettingsCommandSchema, updateConnectionSettingsCommandFixture)).toEqual(updateConnectionSettingsCommandFixture)
+    expect(v.parse(ReportProjectionStatusCommandSchema, reportProjectionStatusCommandFixture)).toEqual(reportProjectionStatusCommandFixture)
+  })
+
+  it('rejects open enums and unknown host-native or content fields', () => {
+    for (const [schema, value] of [
+      [AdapterConnectionStateSchema, 'online'],
+      [ProjectionDeliveryStateSchema, 'cleared'],
+      [ProjectionDetailCodeSchema, 'socket-acknowledged'],
+    ] as const) expect(v.safeParse(schema, value).success).toBe(false)
+
+    for (const [schema, fixture] of [
+      [AdapterProjectionStatusSchema, adapterProjectionStatusFixture],
+      [ConnectionSettingsSchema, connectionSettingsFixture],
+      [UpdateConnectionSettingsCommandSchema, updateConnectionSettingsCommandFixture],
+      [ReportProjectionStatusCommandSchema, reportProjectionStatusCommandFixture],
+    ] as const) {
+      expect(v.safeParse(schema, { ...fixture, composedMessage: 'private' }).success).toBe(false)
+    }
+  })
+
+  it('requires non-empty identifiers, ISO timestamps, and safe non-negative revision fences', () => {
+    for (const input of [
+      { ...connectionSettingsFixture, hostId: '' },
+      { ...connectionSettingsFixture, revision: -1 },
+      { ...connectionSettingsFixture, revision: 1.5 },
+      { ...connectionSettingsFixture, revision: Number.MAX_SAFE_INTEGER + 1 },
+      { ...connectionSettingsFixture, updatedAt: 'not-a-time' },
+    ]) expect(v.safeParse(ConnectionSettingsSchema, input).success).toBe(false)
+
+    for (const input of [
+      { ...updateConnectionSettingsCommandFixture, actionId: '' },
+      { ...updateConnectionSettingsCommandFixture, expectedSettingsRevision: -1 },
+      { ...updateConnectionSettingsCommandFixture, expectedSettingsRevision: 1.5 },
+      { ...updateConnectionSettingsCommandFixture, expectedSettingsRevision: Number.MAX_SAFE_INTEGER + 1 },
+      { ...updateConnectionSettingsCommandFixture, occurredAt: 'not-a-time' },
+    ]) expect(v.safeParse(UpdateConnectionSettingsCommandSchema, input).success).toBe(false)
+  })
+
+  it('requires a non-empty strict settings patch while keeping the three policies independent', () => {
+    expect(v.safeParse(UpdateConnectionSettingsCommandSchema, {
+      ...updateConnectionSettingsCommandFixture,
+      patch: {},
+    }).success).toBe(false)
+    expect(v.safeParse(UpdateConnectionSettingsCommandSchema, {
+      ...updateConnectionSettingsCommandFixture,
+      patch: { applyEnabled: true, collectionEnabled: true },
+    }).success).toBe(false)
+    expect(v.parse(UpdateConnectionSettingsCommandSchema, {
+      ...updateConnectionSettingsCommandFixture,
+      patch: { projectionPolicy: projectionPolicyFixture },
+    }).patch).toEqual({ projectionPolicy: projectionPolicyFixture })
+  })
+
+  it('never treats local writes or blank tombstones as verified delivery', () => {
+    const hash = adapterProjectionStatusFixture.lastGuidanceHash
+    for (const input of [
+      { ...adapterProjectionStatusFixture, state: 'locally-written', lastGuidanceHash: undefined },
+      { ...adapterProjectionStatusFixture, state: 'verified-applied', lastGuidanceHash: undefined },
+      { ...adapterProjectionStatusFixture, state: 'tombstone-locally-written', lastGuidanceHash: hash },
+      { ...adapterProjectionStatusFixture, state: 'verified-guidance-absent', lastGuidanceHash: hash },
+    ]) expect(v.safeParse(AdapterProjectionStatusSchema, input).success).toBe(false)
+  })
+
+  it('requires detail codes to describe the reported delivery state', () => {
+    const cases = [
+      ['locally-written', 'guidance-local-write-completed'],
+      ['verified-applied', 'guidance-snapshot-verified'],
+      ['tombstone-locally-written', 'tombstone-local-write-completed'],
+      ['verified-guidance-absent', 'guidance-absence-snapshot-verified'],
+      ['verified-guidance-absent', 'guidance-absence-manually-verified'],
+      ['error', 'transport-write-failed'],
+      ['error', 'verification-failed'],
+      ['error', 'transport-disconnected'],
+      ['error', 'runtime-unavailable'],
+    ] as const
+    for (const [state, detailCode] of cases) {
+      const candidate = { ...adapterProjectionStatusFixture, state, detailCode }
+      if (state.includes('tombstone') || state === 'verified-guidance-absent') delete (candidate as { lastGuidanceHash?: string }).lastGuidanceHash
+      expect(v.safeParse(AdapterProjectionStatusSchema, candidate).success).toBe(true)
+    }
+    expect(v.safeParse(AdapterProjectionStatusSchema, {
+      ...adapterProjectionStatusFixture,
+      state: 'locally-written',
+      detailCode: 'guidance-snapshot-verified',
+    }).success).toBe(false)
+
+    for (const [state, detailCode] of cases) {
+      const candidate = { ...reportProjectionStatusCommandFixture, state, detailCode }
+      if (state.includes('tombstone') || state === 'verified-guidance-absent') delete (candidate as { lastGuidanceHash?: string }).lastGuidanceHash
+      expect(v.safeParse(ReportProjectionStatusCommandSchema, candidate).success).toBe(true)
+    }
+    expect(v.safeParse(ReportProjectionStatusCommandSchema, {
+      ...reportProjectionStatusCommandFixture,
+      state: 'verified-applied',
+      detailCode: 'guidance-local-write-completed',
+    }).success).toBe(false)
+  })
+
+  it('requires a lowercase SHA-256 guidance hash whenever guidance is present', () => {
+    for (const lastGuidanceHash of ['', 'not-a-hash', 'A'.repeat(64)]) {
+      expect(v.safeParse(AdapterProjectionStatusSchema, {
+        ...adapterProjectionStatusFixture,
+        lastGuidanceHash,
+      }).success).toBe(false)
+      expect(v.safeParse(ReportProjectionStatusCommandSchema, {
+        ...reportProjectionStatusCommandFixture,
+        lastGuidanceHash,
+      }).success).toBe(false)
+    }
+  })
+
+  it('rejects retained projection status that belongs elsewhere or leads settings revision', () => {
+    for (const projectionStatus of [
+      { ...adapterProjectionStatusFixture, hostId: 'other-host' },
+      { ...adapterProjectionStatusFixture, identity: { ...preferenceIdentityFixture, userId: 'other-user' } },
+      { ...adapterProjectionStatusFixture, settingsRevision: connectionSettingsFixture.revision + 1 },
+    ]) expect(v.safeParse(ConnectionSettingsSchema, { ...connectionSettingsFixture, projectionStatus }).success).toBe(false)
+  })
+})
+
+describe('T2C2A content-free policy decision oracles', () => {
+  it('accepts the frozen content-free decision and only closed enums', () => {
+    expect(v.parse(ContentFreePolicyDecisionSchema, contentFreePolicyDecisionFixture)).toEqual(contentFreePolicyDecisionFixture)
+    expect(v.safeParse(ContentFreePolicyStageSchema, 'retention').success).toBe(false)
+    expect(v.safeParse(ContentFreePolicyOutcomeSchema, 'allowed').success).toBe(false)
+    expect(v.safeParse(ContentFreePolicyReasonCodeSchema, 'custom-reason').success).toBe(false)
+  })
+
+  it('rejects message text, evidence payloads, host events, and arbitrary metadata', () => {
+    for (const forbidden of [
+      { userText: 'private' },
+      { assistantText: 'private' },
+      { learningPayload: { userText: 'private' } },
+      { evidence: interactionEvidenceFixture },
+      { composedMessage: 'private' },
+      { contexts: [] },
+      { tools: [] },
+      { metadata: {} },
+    ]) expect(v.safeParse(ContentFreePolicyDecisionSchema, {
+      ...contentFreePolicyDecisionFixture,
+      ...forbidden,
+    }).success).toBe(false)
+  })
+
+  it('requires stable identifiers, an ISO timestamp, and a safe non-negative settings revision', () => {
+    for (const input of [
+      { ...contentFreePolicyDecisionFixture, decisionId: '' },
+      { ...contentFreePolicyDecisionFixture, hostId: '' },
+      { ...contentFreePolicyDecisionFixture, settingsRevision: -1 },
+      { ...contentFreePolicyDecisionFixture, settingsRevision: 1.5 },
+      { ...contentFreePolicyDecisionFixture, settingsRevision: Number.MAX_SAFE_INTEGER + 1 },
+      { ...contentFreePolicyDecisionFixture, occurredAt: 'not-a-time' },
+    ]) expect(v.safeParse(ContentFreePolicyDecisionSchema, input).success).toBe(false)
+  })
+
+  it('keeps each content-free reason bound to its policy stage and outcome', () => {
+    const cases = [
+      ['collection', 'denied', 'observe-disabled'],
+      ['collection', 'denied', 'collection-disabled'],
+      ['learning', 'denied', 'learning-disabled'],
+      ['outbound-inference', 'denied', 'outbound-inference-disabled'],
+      ['outbound-inference', 'denied', 'outbound-source-not-allowed'],
+      ['outbound-inference', 'discarded', 'stale-settings-revision'],
+      ['outbound-inference', 'discarded', 'late-result-discarded'],
+      ['projection', 'denied', 'projection-disabled'],
+      ['projection', 'denied', 'projection-scope-not-allowed'],
+      ['projection', 'discarded', 'stale-settings-revision'],
+    ] as const
+
+    for (const [stage, outcome, reasonCode] of cases) {
+      expect(v.safeParse(ContentFreePolicyDecisionSchema, {
+        ...contentFreePolicyDecisionFixture,
+        stage,
+        outcome,
+        reasonCode,
+      }).success).toBe(true)
+    }
+    for (const input of [
+      { stage: 'projection', outcome: 'denied', reasonCode: 'learning-disabled' },
+      { stage: 'collection', outcome: 'discarded', reasonCode: 'observe-disabled' },
+      { stage: 'learning', outcome: 'denied', reasonCode: 'late-result-discarded' },
+    ]) expect(v.safeParse(ContentFreePolicyDecisionSchema, {
+      ...contentFreePolicyDecisionFixture,
+      ...input,
+    }).success).toBe(false)
   })
 })

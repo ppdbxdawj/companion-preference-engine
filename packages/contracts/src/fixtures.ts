@@ -285,3 +285,72 @@ export const mutationReceiptFixture = {
   },
   recordedAt: '2026-08-21T03:12:01Z',
 } as const
+
+export const adapterProjectionStatusFixture = {
+  schemaVersion: 1,
+  identity: preferenceIdentityFixture,
+  hostId: identityContextFixture.hostId,
+  domain: identityContextFixture.domain,
+  settingsRevision: 3,
+  connectionState: 'connected',
+  state: 'verified-applied',
+  lastGuidanceHash:
+    '94c924e9eb3ef6f90ad9a39bf1a97d36b15e43cd9169370d4834562587dccd76',
+  lastAttemptAt: '2026-08-21T03:20:00Z',
+  detailCode: 'guidance-snapshot-verified',
+  reportedAt: '2026-08-21T03:20:01Z',
+} as const
+
+export const connectionSettingsFixture = {
+  schemaVersion: 1,
+  identity: preferenceIdentityFixture,
+  hostId: identityContextFixture.hostId,
+  collectionPolicy: collectionPolicyFixture,
+  outboundInferencePolicy: disabledOutboundInferencePolicyFixture,
+  projectionPolicy: projectionPolicyFixture,
+  observeEnabled: false,
+  learnEnabled: true,
+  applyEnabled: false,
+  revision: 4,
+  projectionStatus: adapterProjectionStatusFixture,
+  updatedAt: '2026-08-21T03:21:00Z',
+} as const
+
+export const updateConnectionSettingsCommandFixture = {
+  actionId: 'action-update-connection-1',
+  identity: preferenceIdentityFixture,
+  hostId: identityContextFixture.hostId,
+  expectedSettingsRevision: connectionSettingsFixture.revision,
+  patch: {
+    applyEnabled: true,
+  },
+  occurredAt: '2026-08-21T03:22:00Z',
+} as const
+
+export const reportProjectionStatusCommandFixture = {
+  actionId: 'action-report-projection-1',
+  identity: preferenceIdentityFixture,
+  hostId: identityContextFixture.hostId,
+  domain: identityContextFixture.domain,
+  expectedSettingsRevision: connectionSettingsFixture.revision,
+  connectionState: 'connected',
+  state: 'locally-written',
+  lastGuidanceHash:
+    '94c924e9eb3ef6f90ad9a39bf1a97d36b15e43cd9169370d4834562587dccd76',
+  lastAttemptAt: '2026-08-21T03:22:30Z',
+  detailCode: 'guidance-local-write-completed',
+  occurredAt: '2026-08-21T03:22:31Z',
+} as const
+
+export const contentFreePolicyDecisionFixture = {
+  schemaVersion: 1,
+  decisionId: 'policy-decision-1',
+  identity: preferenceIdentityFixture,
+  hostId: identityContextFixture.hostId,
+  domain: identityContextFixture.domain,
+  settingsRevision: connectionSettingsFixture.revision,
+  stage: 'collection',
+  outcome: 'denied',
+  reasonCode: 'observe-disabled',
+  occurredAt: '2026-08-21T03:23:00Z',
+} as const
