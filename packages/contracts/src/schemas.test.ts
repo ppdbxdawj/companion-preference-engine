@@ -74,6 +74,8 @@ import {
   ConfirmCandidateCommandSchema,
   CreateExplicitPreferenceCommandSchema,
   DeleteCandidateCommandSchema,
+  DeleteEvidenceCommandSchema,
+  DeleteEvidenceResultSchema,
   EffectiveProfileQuerySchema,
   ExternalProposalProvenanceSchema,
   GovernanceMutationKindSchema,
@@ -122,6 +124,8 @@ import {
   type ConfirmCandidateCommand,
   type CreateExplicitPreferenceCommand,
   type DeleteCandidateCommand,
+  type DeleteEvidenceCommand,
+  type DeleteEvidenceResult,
   type EffectiveProfileQuery,
   type ExternalProposalProvenance,
   type GovernanceMutationKind,
@@ -158,6 +162,11 @@ import {
   adapterProjectionStatusFixture,
   behaviorGuidanceFixture,
   candidateIdempotencyKeyFixture,
+  deleteEvidenceCommandFixture,
+  deleteEvidenceHttpRequestFixture,
+  deleteEvidenceMutationReceiptFixture,
+  deleteEvidenceNoCascadeResultFixture,
+  deleteEvidenceResultFixture,
   confirmCandidateCommandFixture,
   connectionSettingsFixture,
   contentFreePolicyDecisionFixture,
@@ -1280,6 +1289,12 @@ describe('T2C1 frozen public governance types', () => {
       v.InferOutput<typeof DeleteCandidateCommandSchema>
     >().toEqualTypeOf<DeleteCandidateCommand>()
     expectTypeOf<
+      v.InferOutput<typeof DeleteEvidenceCommandSchema>
+    >().toEqualTypeOf<DeleteEvidenceCommand>()
+    expectTypeOf<
+      v.InferOutput<typeof DeleteEvidenceResultSchema>
+    >().toEqualTypeOf<DeleteEvidenceResult>()
+    expectTypeOf<
       v.InferOutput<typeof SuppressCandidateCommandSchema>
     >().toEqualTypeOf<SuppressCandidateCommand>()
     expectTypeOf<
@@ -1880,7 +1895,7 @@ describe('MutationReceiptSchema', () => {
     )
   })
 
-  it('accepts only the ten frozen mutation kinds', () => {
+  it('accepts only the eleven frozen mutation kinds', () => {
     for (const mutation of [
       'propose-candidate',
       'confirm-candidate',
@@ -1892,6 +1907,7 @@ describe('MutationReceiptSchema', () => {
       'revoke-preference',
       'update-connection-settings',
       'report-projection-status',
+      'delete-evidence',
     ]) {
       expect(v.safeParse(GovernanceMutationKindSchema, mutation).success).toBe(
         true,
@@ -1917,6 +1933,76 @@ describe('MutationReceiptSchema', () => {
       { ...mutationReceiptFixture, requestPayload: { private: true } },
     ]) {
       expect(v.safeParse(MutationReceiptSchema, input).success).toBe(false)
+    }
+  })
+
+  it('stores only content-free evidence deletion replay metadata', () => {
+    expect(v.parse(DeleteEvidenceResultSchema, deleteEvidenceResultFixture)).toEqual(
+      deleteEvidenceResultFixture,
+    )
+    expect(v.parse(MutationReceiptSchema, deleteEvidenceMutationReceiptFixture)).toEqual(
+      deleteEvidenceMutationReceiptFixture,
+    )
+    for (const privateField of ['learningPayload', 'evidence', 'userText', 'assistantText']) {
+      expect(
+        v.safeParse(DeleteEvidenceResultSchema, {
+          ...deleteEvidenceResultFixture,
+          [privateField]: 'private',
+        }).success,
+      ).toBe(false)
+    }
+  })
+
+  it('allows zero cascade while rejecting empty or duplicate affected IDs', () => {
+    expect(
+      v.parse(DeleteEvidenceResultSchema, deleteEvidenceNoCascadeResultFixture),
+    ).toEqual(deleteEvidenceNoCascadeResultFixture)
+
+    for (const patch of [
+      { deletedPendingCandidateIds: [''] },
+      { revokedPreferenceIds: [''] },
+      { deletedPendingCandidateIds: ['candidate-1', 'candidate-1'] },
+      { revokedPreferenceIds: ['preference-1', 'preference-1'] },
+    ]) {
+      expect(
+        v.safeParse(DeleteEvidenceResultSchema, {
+          ...deleteEvidenceNoCascadeResultFixture,
+          ...patch,
+        }).success,
+      ).toBe(false)
+    }
+  })
+})
+
+describe('DeleteEvidenceCommandSchema', () => {
+  it('accepts the exact identity-targeted explicit deletion command', () => {
+    expect(v.parse(DeleteEvidenceCommandSchema, deleteEvidenceCommandFixture)).toEqual(
+      deleteEvidenceCommandFixture,
+    )
+  })
+
+  it('requires action, evidence, identity, audit, time, and explicit cascade intent', () => {
+    for (const field of [
+      'actionId', 'evidenceId', 'identity', 'auditEventId', 'occurredAt',
+      'revokeDependentPreferences',
+    ] as const) {
+      const input = { ...deleteEvidenceCommandFixture } as Record<string, unknown>
+      delete input[field]
+      expect(v.safeParse(DeleteEvidenceCommandSchema, input).success).toBe(false)
+    }
+  })
+
+  it('rejects revisions, settings fences, raw content, and unknown fields', () => {
+    for (const extra of [
+      { expectedEvidenceRevision: 1 },
+      { expectedSettingsRevision: 1 },
+      { learningPayload: { userText: 'private' } },
+      { arbitrary: true },
+    ]) {
+      expect(v.safeParse(DeleteEvidenceCommandSchema, {
+        ...deleteEvidenceCommandFixture,
+        ...extra,
+      }).success).toBe(false)
     }
   })
 })
@@ -2556,6 +2642,12 @@ describe('T2C2C host-neutral HTTP DTO contracts', () => {
         f.governanceMutationHttpRequestFixture,
       ),
     ).toEqual(f.governanceMutationHttpRequestFixture)
+    expect(
+      v.parse(
+        s.GovernanceMutationHttpRequestSchema,
+        f.deleteEvidenceHttpRequestFixture,
+      ),
+    ).toEqual(f.deleteEvidenceHttpRequestFixture)
     expect(
       v.parse(
         s.HttpResponseSchema(s.MutationReceiptSchema),

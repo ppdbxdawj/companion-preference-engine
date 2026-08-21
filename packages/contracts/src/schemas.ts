@@ -490,6 +490,29 @@ export type RevokePreferenceCommand = {
   reasonCode?: string
 }
 
+/**
+ * Explicit destructive governance action. Evidence has no mutable revision, so
+ * action-receipt replay is its fence; settings revisions must not block erasure.
+ */
+export type DeleteEvidenceCommand = {
+  actionId: string
+  evidenceId: string
+  identity: PreferenceIdentity
+  occurredAt: string
+  auditEventId: string
+  revokeDependentPreferences: boolean
+}
+
+/** Content-free outcome safe for mutation receipts and HTTP responses. */
+export type DeleteEvidenceResult = {
+  kind: 'evidence-deletion'
+  evidenceId: string
+  disposition: 'deleted' | 'already-deleted'
+  tombstoneCreated: boolean
+  deletedPendingCandidateIds: string[]
+  revokedPreferenceIds: string[]
+}
+
 export type GovernanceMutationKind =
   | 'propose-candidate'
   | 'confirm-candidate'
@@ -501,11 +524,13 @@ export type GovernanceMutationKind =
   | 'revoke-preference'
   | 'update-connection-settings'
   | 'report-projection-status'
+  | 'delete-evidence'
 
 export type MutationReceiptResult =
   | { kind: 'candidate'; candidateId: string; revision: number }
   | { kind: 'preference'; preferenceId: string; revision: number }
   | { kind: 'none' }
+  | DeleteEvidenceResult
 
 export type MutationReceipt = {
   actionId: string
@@ -944,9 +969,25 @@ export const SuppressCandidateCommandSchema = v.strictObject({...baseCommand,can
 export const CreateExplicitPreferenceCommandSchema = v.strictObject({...baseCommand,preferenceId:id,identity:PreferenceIdentitySchema,preference:PreferenceSchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,expectedNoActivePreference:v.literal(true),evidenceIds:v.array(id),expiresAt:v.optional(iso)})
 export const RevisePreferenceCommandSchema = v.pipe(v.strictObject({...baseCommand,preferenceId:id,expectedPreferenceRevision:rev1,replacementPreferenceId:id,preference:PreferenceSchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,evidenceIds:v.array(id),expiresAt:v.optional(iso)}),v.check(x=>x.replacementPreferenceId!==x.preferenceId))
 export const RevokePreferenceCommandSchema = v.strictObject({...baseCommand,preferenceId:id,expectedPreferenceRevision:rev1,reasonCode:v.optional(id)})
-export const GovernanceMutationKindSchema = v.picklist(['propose-candidate','confirm-candidate','reject-candidate','delete-candidate','suppress-candidate','create-explicit-preference','revise-preference','revoke-preference','update-connection-settings','report-projection-status'])
-export const MutationReceiptResultSchema = v.variant('kind',[v.strictObject({kind:v.literal('candidate'),candidateId:id,revision:rev0}),v.strictObject({kind:v.literal('preference'),preferenceId:id,revision:rev1}),v.strictObject({kind:v.literal('none')})])
-export const MutationReceiptSchema = v.strictObject({actionId:id,mutation:GovernanceMutationKindSchema,payloadHash:v.pipe(v.string(),v.regex(/^[0-9a-f]{64}$/)),result:MutationReceiptResultSchema,recordedAt:iso})
+export const DeleteEvidenceCommandSchema = v.strictObject({
+  ...baseCommand,
+  evidenceId: id,
+  identity: PreferenceIdentitySchema,
+  auditEventId: id,
+  revokeDependentPreferences: v.boolean(),
+}) as v.GenericSchema<DeleteEvidenceCommand>
+const deleteEvidenceResultSchema = v.strictObject({
+  kind: v.literal('evidence-deletion'),
+  evidenceId: id,
+  disposition: v.picklist(['deleted', 'already-deleted']),
+  tombstoneCreated: v.boolean(),
+  deletedPendingCandidateIds: v.pipe(v.array(id), v.check(values => new Set(values).size === values.length)),
+  revokedPreferenceIds: v.pipe(v.array(id), v.check(values => new Set(values).size === values.length)),
+})
+export const DeleteEvidenceResultSchema = deleteEvidenceResultSchema as v.GenericSchema<DeleteEvidenceResult>
+export const GovernanceMutationKindSchema = v.picklist(['propose-candidate','confirm-candidate','reject-candidate','delete-candidate','suppress-candidate','create-explicit-preference','revise-preference','revoke-preference','update-connection-settings','report-projection-status','delete-evidence']) as unknown as v.GenericSchema<GovernanceMutationKind>
+export const MutationReceiptResultSchema = v.variant('kind',[v.strictObject({kind:v.literal('candidate'),candidateId:id,revision:rev0}),v.strictObject({kind:v.literal('preference'),preferenceId:id,revision:rev1}),v.strictObject({kind:v.literal('none')}),deleteEvidenceResultSchema]) as unknown as v.GenericSchema<MutationReceiptResult>
+export const MutationReceiptSchema = v.strictObject({actionId:id,mutation:GovernanceMutationKindSchema,payloadHash:v.pipe(v.string(),v.regex(/^[0-9a-f]{64}$/)),result:MutationReceiptResultSchema,recordedAt:iso}) as v.GenericSchema<MutationReceipt>
 
 // TODO(T2C2A): the low-tier implementer replaces only the schema bodies in this
 // region. Public types, fixtures, and behavioral RED oracles are high-tier
@@ -1564,7 +1605,7 @@ export type CandidateListHttpRequest = { identity: PreferenceIdentity; statuses?
 export type PreferenceListHttpRequest = { identity: PreferenceIdentity; statuses?: PreferenceStatus[] }
 export type ConnectionSettingsHttpRequest = { identity: PreferenceIdentity; hostId: string }
 export type AuditHttpRequest = { query: AuditQuery }
-export type GovernanceMutationCommand = ProposeCandidateCommand | ConfirmCandidateCommand | RejectCandidateCommand | DeleteCandidateCommand | SuppressCandidateCommand | CreateExplicitPreferenceCommand | RevisePreferenceCommand | RevokePreferenceCommand | UpdateConnectionSettingsCommand | ReportProjectionStatusCommand
+export type GovernanceMutationCommand = ProposeCandidateCommand | ConfirmCandidateCommand | RejectCandidateCommand | DeleteCandidateCommand | SuppressCandidateCommand | CreateExplicitPreferenceCommand | RevisePreferenceCommand | RevokePreferenceCommand | UpdateConnectionSettingsCommand | ReportProjectionStatusCommand | DeleteEvidenceCommand
 export type GovernanceMutationHttpRequest = { command: GovernanceMutationCommand }
 
 export type IngestEvidenceHttpResult = { evidenceId: string; disposition: 'accepted' | 'duplicate'; settingsRevision: number }
@@ -1647,6 +1688,7 @@ export const GovernanceMutationCommandSchema = v.union([
   CreateExplicitPreferenceCommandSchema,
   RevisePreferenceCommandSchema,
   RevokePreferenceCommandSchema,
+  DeleteEvidenceCommandSchema,
   UpdateConnectionSettingsCommandSchema,
   ReportProjectionStatusCommandSchema,
 ]) as unknown as v.GenericSchema<GovernanceMutationCommand>

@@ -293,6 +293,42 @@ export const revokePreferenceCommandFixture = {
   reasonCode: 'user-requested',
 } as const
 
+export const deleteEvidenceCommandFixture = {
+  actionId: 'action-delete-evidence-1',
+  evidenceId: interactionEvidenceFixture.id,
+  identity: preferenceIdentityFixture,
+  occurredAt: '2026-08-21T03:15:30Z',
+  auditEventId: 'audit-delete-evidence-1',
+  revokeDependentPreferences: false,
+} as const
+
+export const deleteEvidenceResultFixture = {
+  kind: 'evidence-deletion',
+  evidenceId: interactionEvidenceFixture.id,
+  disposition: 'deleted',
+  tombstoneCreated: true,
+  deletedPendingCandidateIds: ['candidate-pending-evidence-only-1'],
+  revokedPreferenceIds: [],
+} as const
+
+export const deleteEvidenceNoCascadeResultFixture = {
+  kind: 'evidence-deletion',
+  evidenceId: 'evidence-with-no-dependent-records',
+  disposition: 'deleted',
+  tombstoneCreated: true,
+  deletedPendingCandidateIds: [],
+  revokedPreferenceIds: [],
+} as const
+
+export const deleteEvidenceMutationReceiptFixture = {
+  actionId: deleteEvidenceCommandFixture.actionId,
+  mutation: 'delete-evidence',
+  payloadHash:
+    '53bd6221e92cc941a792a37102dbdd2e5ad571615d0e47e74b8e73c6daaaa681',
+  result: deleteEvidenceResultFixture,
+  recordedAt: '2026-08-21T03:15:31Z',
+} as const
+
 export const mutationReceiptFixture = {
   actionId: confirmCandidateCommandFixture.actionId,
   mutation: 'confirm-candidate',
@@ -496,6 +532,10 @@ export const effectiveProfileHttpRequestFixture = {
 
 export const governanceMutationHttpRequestFixture = {
   command: confirmCandidateCommandFixture,
+} as const
+
+export const deleteEvidenceHttpRequestFixture = {
+  command: deleteEvidenceCommandFixture,
 } as const
 
 export const mutationSuccessHttpResponseFixture = {
