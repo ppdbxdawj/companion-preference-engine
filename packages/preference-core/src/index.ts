@@ -1,3 +1,5 @@
 export * from './explain.js'
 export * from './lifecycle.js'
 export * from './resolver.js'
+export * from './repository.js'
+export * from './in-memory-repository.js'
