@@ -1,0 +1,25 @@
+{
+  "name": "@companion-preference/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown src/index.ts --format esm --dts --clean",
+    "test": "pnpm run build && vitest run --root ../.. packages/contracts/src/schemas.test.ts && pnpm run test:self-import",
+    "test:self-import": "node --input-type=module -e \"const m = await import('@companion-preference/contracts'); const expected = ['CollectionPolicySchema','ContentCategorySchema','DomainSchema','HostSourceKindSchema','IdentityContextSchema','OutboundInferenceModeSchema','OutboundInferencePolicySchema','ProjectionPolicySchema','TypedHostSourceSchema']; for (const name of expected) { if (!Object.hasOwn(m, name)) throw new Error('missing export: ' + name) } console.log('self-import exports ok')\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "valibot": "1.4.2"
+  }
+}
