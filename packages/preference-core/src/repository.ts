@@ -90,6 +90,16 @@ export class StaleClaimError extends Error {
   readonly code = 'STALE_CLAIM' as const
 }
 
+export class ActivePreferenceSlotOccupiedError extends Error {
+  readonly name = 'ActivePreferenceSlotOccupiedError'
+  readonly code = 'ACTIVE_PREFERENCE_SLOT_OCCUPIED' as const
+}
+
+export class CandidateIdempotencyConflictError extends Error {
+  readonly name = 'CandidateIdempotencyConflictError'
+  readonly code = 'CANDIDATE_IDEMPOTENCY_CONFLICT' as const
+}
+
 export interface PreferenceRepository {
   ingestEvidenceAtomically(evidence: InteractionEvidence): Promise<IngestEvidenceResult>
   claimNextEvidence(workerId: string, leaseUntil: string, now: string): Promise<EvidenceClaim | undefined>

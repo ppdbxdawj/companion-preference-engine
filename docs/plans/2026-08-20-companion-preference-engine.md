@@ -540,7 +540,7 @@ export interface PreferenceRepository {
 
 **Step 3: Implement `InMemoryPreferenceRepository`**
 
-Use immutable clones at boundaries so tests cannot mutate stored state through references. Add per-step failure injection to every atomic command so state, audit, and mutation receipt are proven all-or-nothing. Enforce the same candidate idempotency keys and unique action receipts that SQLite will enforce later. Confirmation, explicit creation, and revision must atomically supersede any active preference occupying the same identity/key/scope slot.
+Use immutable clones at boundaries so tests cannot mutate stored state through references. Add per-step failure injection to every atomic command so state, audit, and mutation receipt are proven all-or-nothing. Enforce the same candidate idempotency keys and unique action receipts that SQLite will enforce later. Explicit creation requires an empty identity/key/scope active slot (`expectedNoActivePreference: true`) and conflicts when that slot is occupied. Only `RevisePreferenceCommand` may revision-fence and replace an existing active record. Confirmation may atomically supersede an occupied slot only when its typed `supersedesPreference` expectation identifies the active record and expected revision; otherwise it conflicts rather than overwriting.
 
 **Step 4: Run tests**
 
