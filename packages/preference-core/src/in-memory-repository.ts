@@ -30,7 +30,6 @@ export type InMemoryRepositoryOptions = Readonly<{
   snapshot?: InMemoryRepositorySnapshot
 }>
 export type InMemoryRepositorySnapshot = Readonly<{ schemaVersion: 1; state: unknown }>
-const todo = (): never => { throw new Error('TODO(T5B): implement frozen in-memory repository contract') }
 type Lease = { workerId: string; token: string; until: string; version: number }
 type State = {
   evidence: Record<string, { evidence: InteractionEvidence; state: string; lease: Lease | undefined }>
@@ -39,6 +38,10 @@ type State = {
     actionId: string; mutation: string; payloadHash: string; result: unknown; recordedAt: string
   }>
   audits: AuditEvent[]; completions: Record<string, CompletionProjection>
+  settings?: Record<string, ConnectionSettings>
+  evidenceTombstones?: Record<string, EvidenceProvenance>
+  policyDecisionDigests?: Record<string, string>
+  tombstoneActionDigests?: Record<string, string>
 }
 type CompletionProjection = {
   evidenceId: string; workerId: string; claimToken: string; leaseVersion: number
@@ -79,7 +82,9 @@ export class InMemoryPreferenceRepository implements PreferenceRepository {
       ? clone(options.snapshot.state as State)
       : { evidence: {}, candidates: {}, preferences: {}, suppressions: [], receipts: {}, audits: [], completions: {} }
     this.state.completions ??= {}
-    this.state.preferences ??= {}; this.state.suppressions ??= []; this.state.receipts ??= {}
+  this.state.preferences ??= {}; this.state.suppressions ??= []; this.state.receipts ??= {}
+    this.state.settings ??= {}; this.state.evidenceTombstones ??= {}
+    this.state.policyDecisionDigests ??= {}; this.state.tombstoneActionDigests ??= {}
   }
   private atomic<T>(op: RepositoryOperation, fn: () => T, receipt = true, staged = false): T {
     const before = clone(this.state)
@@ -196,7 +201,7 @@ export class InMemoryPreferenceRepository implements PreferenceRepository {
   }
   getEvidenceProvenance(id: string): Promise<EvidenceProvenance | undefined> {
     const record = this.state.evidence[id]
-    return Promise.resolve(record ? clone({ state: 'live', evidence: record.evidence } as EvidenceProvenance) : undefined)
+    return Promise.resolve(record ? clone({ state: 'live', evidence: record.evidence } as EvidenceProvenance) : clone(this.state.evidenceTombstones?.[id]))
   }
   listEvidenceProvenance(i: IdentityContext): Promise<EvidenceProvenance[]> {
     return Promise.resolve(Object.values(this.state.evidence)
@@ -512,9 +517,138 @@ export class InMemoryPreferenceRepository implements PreferenceRepository {
       .sort((a, b) => compare(a.createdAt, b.createdAt) || compare(a.id, b.id))
       .map(clone))
   }
-  getConnectionSettings(_i: PreferenceIdentity, _h: string): Promise<ConnectionSettings> { return Promise.reject(todo()) }
-  updateConnectionSettingsAtomically(_c: UpdateConnectionSettingsCommand): Promise<ConnectionSettings> { return Promise.reject(todo()) }
-  reportAdapterProjectionStatusAtomically(_c: ReportProjectionStatusCommand): Promise<AdapterProjectionStatus> { return Promise.reject(todo()) }
-  recordPolicyDecisionAtomically(_d: ContentFreePolicyDecision): Promise<void> { return Promise.reject(todo()) }
-  deleteEvidenceAtomically(_c: DeleteEvidenceCommand): Promise<DeleteEvidenceResult> { return Promise.reject(todo()) }
+  private settingsKey(i: PreferenceIdentity, h: string) { return canonical({ identity: i, hostId: h }) }
+  private defaultSettings(i: PreferenceIdentity, h: string): ConnectionSettings { return {
+    schemaVersion: 1, identity: clone(i), hostId: h,
+    collectionPolicy: { allowedSources: [], retainContent: false },
+    outboundInferencePolicy: { mode: 'disabled' }, projectionPolicy: { allowedHosts: [], allowedDomains: [] },
+    observeEnabled: false, learnEnabled: false, applyEnabled: false, revision: 0,
+    updatedAt: '1970-01-01T00:00:00.000Z',
+  } }
+  getConnectionSettings(i: PreferenceIdentity, h: string): Promise<ConnectionSettings> {
+    return Promise.resolve(clone(this.state.settings![this.settingsKey(i, h)] ?? this.defaultSettings(i, h)))
+  }
+  updateConnectionSettingsAtomically(c: UpdateConnectionSettingsCommand): Promise<ConnectionSettings> {
+    return Promise.resolve().then(() => this.atomic('update-connection-settings', () => {
+    const key = this.settingsKey(c.identity, c.hostId), old = this.state.receipts[c.actionId], hash = digest(c)
+    if (old) { if (old.payloadHash !== hash) throw new ActionPayloadConflictError(c.actionId); return clone(old.result) as ConnectionSettings }
+    const current = this.state.settings![key] ?? this.defaultSettings(c.identity, c.hostId)
+    if (current.revision !== c.expectedSettingsRevision) throw new RevisionConflictError(c.expectedSettingsRevision, current.revision)
+    const next = { ...current, ...clone(c.patch), identity: clone(c.identity), revision: current.revision + 1, updatedAt: c.occurredAt } as ConnectionSettings
+    this.state.settings![key] = next
+    this.options.failAt?.('update-connection-settings', 'after-state')
+    this.state.audits.push({ schemaVersion: 1, id: this.options.auditEventIdFactory(), identity: auditIdentity(c.identity), actor: 'user',
+      kind: 'connection-settings-updated', reasonCode: 'accepted',
+      entity: { kind: 'connection', hostId: c.hostId }, actionId: c.actionId,
+      settingsRevision: next.revision, occurredAt: c.occurredAt } as AuditEvent)
+    this.options.failAt?.('update-connection-settings', 'after-audit')
+    this.state.receipts[c.actionId] = { actionId: c.actionId, mutation: 'update-connection-settings', payloadHash: hash, result: clone(next), recordedAt: c.occurredAt }
+    this.options.failAt?.('update-connection-settings', 'after-receipt')
+    this.options.failAt?.('update-connection-settings', 'before-commit')
+    return clone(next)
+    }, true, true))
+  }
+  reportAdapterProjectionStatusAtomically(c: ReportProjectionStatusCommand): Promise<AdapterProjectionStatus> {
+    return Promise.resolve().then(() => this.atomic('report-projection-status', () => {
+    const key = this.settingsKey(c.identity, c.hostId), old = this.state.receipts[c.actionId], hash = digest(c)
+    if (old) { if (old.payloadHash !== hash) throw new ActionPayloadConflictError(c.actionId); return clone(old.result) as AdapterProjectionStatus }
+    const settings = this.state.settings![key]
+    if (!settings || settings.revision !== c.expectedSettingsRevision) throw new RevisionConflictError(c.expectedSettingsRevision, settings?.revision ?? 0)
+    const status = clone({ ...c, schemaVersion: 1, settingsRevision: c.expectedSettingsRevision, reportedAt: c.occurredAt })
+    delete (status as any).actionId; delete (status as any).occurredAt; delete (status as any).expectedSettingsRevision
+    if (c.state === 'tombstone-locally-written' || c.state === 'verified-guidance-absent') delete (status as any).lastGuidanceHash
+    ;(status as any).reportedAt = c.occurredAt
+    settings.projectionStatus = status as AdapterProjectionStatus
+    this.options.failAt?.('report-projection-status', 'after-state')
+    const reason = c.state === 'error' ? c.detailCode : 'accepted'
+    this.state.audits.push({ schemaVersion: 1, id: this.options.auditEventIdFactory(), identity: auditIdentity(c.identity), actor: 'adapter',
+      kind: 'projection-status-reported', reasonCode: reason,
+      entity: { kind: 'connection', hostId: c.hostId }, actionId: c.actionId,
+      settingsRevision: c.expectedSettingsRevision, occurredAt: c.occurredAt } as AuditEvent)
+    this.options.failAt?.('report-projection-status', 'after-audit')
+    this.state.receipts[c.actionId] = { actionId: c.actionId, mutation: 'report-projection-status', payloadHash: hash, result: clone(status), recordedAt: c.occurredAt }
+    this.options.failAt?.('report-projection-status', 'after-receipt')
+    this.options.failAt?.('report-projection-status', 'before-commit')
+    return clone(status as AdapterProjectionStatus)
+    }, true, true))
+  }
+  recordPolicyDecisionAtomically(d: ContentFreePolicyDecision): Promise<void> {
+    return Promise.resolve().then(() => this.atomic('record-policy-decision', () => {
+    const payload = { schemaVersion: d.schemaVersion, decisionId: d.decisionId, identity: d.identity,
+      hostId: d.hostId, domain: d.domain, settingsRevision: d.settingsRevision, stage: d.stage,
+      outcome: d.outcome, reasonCode: d.reasonCode, occurredAt: d.occurredAt }
+    const hash = digest(payload), old = this.state.policyDecisionDigests![d.decisionId]
+    if (old) {
+      if (old !== hash) throw new ActionPayloadConflictError(d.decisionId)
+      return
+    }
+    const settings = this.state.settings![this.settingsKey(d.identity, d.hostId)] ?? this.defaultSettings(d.identity, d.hostId)
+    if (d.settingsRevision > settings.revision) throw new RevisionConflictError(d.settingsRevision, settings.revision)
+    this.state.audits.push({ schemaVersion: 1, id: d.decisionId, identity: clone(d.identity), actor: 'runtime', kind: 'policy-decision-recorded', reasonCode: d.reasonCode,
+      entity: { kind: 'policy-decision', decisionId: d.decisionId }, settingsRevision: d.settingsRevision, occurredAt: d.occurredAt } as AuditEvent)
+    this.state.policyDecisionDigests![d.decisionId] = hash
+    this.options.failAt?.('record-policy-decision', 'after-state')
+    this.options.failAt?.('record-policy-decision', 'after-audit')
+    this.options.failAt?.('record-policy-decision', 'before-commit')
+    }, false, true))
+  }
+  deleteEvidenceAtomically(c: DeleteEvidenceCommand): Promise<DeleteEvidenceResult> {
+    return Promise.resolve().then(() => this.atomic('delete-evidence', () => {
+    const hash = digest(c), old = this.state.receipts[c.actionId]
+    if (old) { if (old.payloadHash !== hash) throw new ActionPayloadConflictError(c.actionId); return clone(old.result) as DeleteEvidenceResult }
+    const rec = this.state.evidence[c.evidenceId]
+    if (!rec) {
+      const tombstone = this.state.evidenceTombstones![c.evidenceId]
+      if (!tombstone) {
+        const e = new Error('evidence not found'); Object.assign(e, { code: 'EVIDENCE_NOT_FOUND' }); throw e
+      }
+      const result: DeleteEvidenceResult = { kind: 'evidence-deletion', evidenceId: c.evidenceId, disposition: 'already-deleted',
+        tombstoneCreated: false, deletedPendingCandidateIds: [], revokedPreferenceIds: [] }
+      this.state.tombstoneActionDigests![c.actionId] = hash
+      this.options.failAt?.('delete-evidence', 'after-state')
+      this.state.audits.push({ schemaVersion: 1, id: c.auditEventId, identity: auditIdentity(c.identity), actor: 'user', kind: 'evidence-deleted',
+        reasonCode: 'user-requested', entity: { kind: 'evidence', evidenceId: c.evidenceId }, actionId: c.actionId, occurredAt: c.occurredAt } as AuditEvent)
+      this.options.failAt?.('delete-evidence', 'after-audit')
+      this.state.receipts[c.actionId] = { actionId: c.actionId, mutation: 'delete-evidence', payloadHash: hash, result, recordedAt: c.occurredAt }
+      this.options.failAt?.('delete-evidence', 'after-receipt'); this.options.failAt?.('delete-evidence', 'before-commit')
+      return clone(result)
+    }
+    if (!same(rec.evidence.identity, c.identity)) {
+      const e = new Error('evidence not found'); Object.assign(e, { code: 'EVIDENCE_NOT_FOUND' }); throw e
+    }
+    delete this.state.evidence[c.evidenceId]
+    this.state.evidenceTombstones![c.evidenceId] = { state: 'deleted-tombstone', evidenceId: c.evidenceId,
+      deletedAt: c.occurredAt, reasonCode: 'user-requested' } as EvidenceProvenance
+    const deletedPendingCandidateIds: string[] = []
+    for (const [k, x] of Object.entries(this.state.candidates)) {
+      const inEvidence = x.evidenceIds.includes(c.evidenceId)
+      const inCounter = x.counterEvidenceIds.includes(c.evidenceId)
+      const inProvenance = x.provenance.kind === 'observer-evidence' && x.provenance.evidenceIds.includes(c.evidenceId)
+      if (!inEvidence && !inCounter && !inProvenance) continue
+      if (x.status === 'pending_confirmation' && x.evidenceIds.length === 1) {
+        deletedPendingCandidateIds.push(x.id); delete this.state.candidates[k]; continue
+      }
+      x.evidenceIds = x.evidenceIds.filter((id) => id !== c.evidenceId)
+      x.counterEvidenceIds = x.counterEvidenceIds.filter((id) => id !== c.evidenceId)
+      if (x.provenance.kind === 'observer-evidence') x.provenance.evidenceIds = x.provenance.evidenceIds.filter((id) => id !== c.evidenceId)
+    }
+    const revokedPreferenceIds: string[] = []
+    if (c.revokeDependentPreferences) for (const p of Object.values(this.state.preferences)) {
+      if (p.status !== 'active' || !p.evidenceIds.includes(c.evidenceId)) continue
+      p.status = 'revoked'; p.revision++; p.updatedAt = c.occurredAt; revokedPreferenceIds.push(p.id)
+      this.state.audits.push({ schemaVersion: 1, id: this.options.auditEventIdFactory(), identity: auditIdentity(p.identity), actor: 'user',
+        kind: 'preference-revoked', reasonCode: 'user-requested', entity: { kind: 'preference', preferenceId: p.id },
+        actionId: c.actionId, revision: p.revision, occurredAt: c.occurredAt } as AuditEvent)
+    }
+    deletedPendingCandidateIds.sort(); revokedPreferenceIds.sort()
+    const result = { kind: 'evidence-deletion', evidenceId: c.evidenceId, disposition: 'deleted', tombstoneCreated: true,
+      deletedPendingCandidateIds, revokedPreferenceIds } as DeleteEvidenceResult
+    this.options.failAt?.('delete-evidence', 'after-state')
+    this.state.audits.push({ schemaVersion: 1, id: c.auditEventId, identity: auditIdentity(c.identity), actor: 'user', kind: 'evidence-deleted',
+      reasonCode: 'user-requested', entity: { kind: 'evidence', evidenceId: c.evidenceId }, actionId: c.actionId, occurredAt: c.occurredAt } as AuditEvent)
+    this.options.failAt?.('delete-evidence', 'after-audit')
+    this.state.receipts[c.actionId] = { actionId: c.actionId, mutation: 'delete-evidence', payloadHash: hash, result, recordedAt: c.occurredAt }
+    this.options.failAt?.('delete-evidence', 'after-receipt'); this.options.failAt?.('delete-evidence', 'before-commit')
+    return clone(result)
+  }, true, true)) }
 }
