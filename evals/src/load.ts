@@ -4,6 +4,8 @@ import { dirname, isAbsolute, resolve } from 'node:path'
 
 import type {
   DatasetManifest,
+  DatasetManifestV2,
+  BackgroundEvaluationTurn,
   DevelopmentEvaluationCase,
   HeldOutEvaluationInput,
 } from './schema.js'
@@ -227,6 +229,15 @@ function validateHeldOutInput(value: unknown): asserts value is HeldOutEvaluatio
   validateQueryContext(value.queryContext)
 }
 
+function validateBackgroundTurn(value: unknown): asserts value is BackgroundEvaluationTurn {
+  if (!isRecord(value)) throw new Error('background turn must be an object')
+  exactKeys(value, ['schemaVersion', 'sourceRef', 'role', 'text'])
+  if (value.schemaVersion !== 1) throw new Error('unsupported background schemaVersion')
+  nonEmptyString(value.sourceRef, 'background sourceRef')
+  oneOf(value.role, ['user', 'assistant'], 'background role')
+  nonEmptyString(value.text, 'background text')
+}
+
 async function readBytes(source: string): Promise<Buffer> {
   if (!source.startsWith('data:')) return readFile(source)
   const comma = source.indexOf(',')
@@ -258,7 +269,12 @@ async function readJsonl<T>(source: string, validate: (value: unknown) => assert
       throw new Error(`malformed JSON on line ${index + 1}`)
     }
     validate(parsed)
-    const id = (parsed as { id: string }).id
+    const id = isRecord(parsed) && typeof parsed.id === 'string'
+      ? parsed.id
+      : isRecord(parsed) && typeof parsed.sourceRef === 'string'
+        ? parsed.sourceRef
+        : undefined
+    if (id === undefined) throw new Error(`missing dataset identity on line ${index + 1}`)
     if (ids.has(id)) throw new Error(`duplicate case ID: ${id}`)
     ids.add(id)
     result.push(parsed)
@@ -278,6 +294,12 @@ export async function loadHeldOutInputs(
   return readJsonl(path, validateHeldOutInput)
 }
 
+export async function loadBackgroundTurns(
+  path: string,
+): Promise<BackgroundEvaluationTurn[]> {
+  return readJsonl(path, validateBackgroundTurn)
+}
+
 export async function loadDatasetManifest(
   path: string,
 ): Promise<DatasetManifest> {
@@ -289,8 +311,15 @@ export async function loadDatasetManifest(
     throw new Error('malformed dataset manifest JSON')
   }
   if (!isRecord(parsed)) throw new Error('manifest must be an object')
-  exactKeys(parsed, ['schemaVersion', 'frozenAt', 'datasets', 'externalHeldOutLabels', 'labelChangePolicy'])
-  if (parsed.schemaVersion !== 1) throw new Error('unsupported manifest schemaVersion')
+  exactKeys(parsed, [
+    'schemaVersion',
+    'frozenAt',
+    'datasets',
+    'externalHeldOutLabels',
+    'labelChangePolicy',
+    ...(parsed.schemaVersion === 2 ? ['qualityMinimums', 'backgroundMinimumTurns'] : []),
+  ])
+  if (parsed.schemaVersion !== 1 && parsed.schemaVersion !== 2) throw new Error('unsupported manifest schemaVersion')
   nonEmptyString(parsed.frozenAt, 'manifest.frozenAt')
   if (Number.isNaN(Date.parse(parsed.frozenAt))) throw new Error('invalid manifest.frozenAt')
   if (!Array.isArray(parsed.datasets) || parsed.datasets.length === 0) throw new Error('invalid manifest.datasets')
@@ -300,7 +329,7 @@ export async function loadDatasetManifest(
     exactKeys(entry, ['path', 'kind', 'caseCount', 'sha256'])
     nonEmptyString(entry.path, 'manifest dataset path')
     if (isAbsolute(entry.path) || entry.path.startsWith('data:')) throw new Error('manifest dataset path must be relative')
-    oneOf(entry.kind, ['development', 'held-out-input'], 'manifest dataset kind')
+    oneOf(entry.kind, ['development', 'held-out-input', 'background-turn'], 'manifest dataset kind')
     if (typeof entry.caseCount !== 'number' || !Number.isSafeInteger(entry.caseCount) || entry.caseCount < 0) {
       throw new Error('invalid manifest caseCount')
     }
@@ -322,6 +351,27 @@ export async function loadDatasetManifest(
   if (parsed.labelChangePolicy !== 'new-manifest-version-and-reviewed-gold-correction') {
     throw new Error('invalid labelChangePolicy')
   }
+  if (parsed.schemaVersion === 2) {
+    if (!isRecord(parsed.qualityMinimums)) throw new Error('invalid manifest.qualityMinimums')
+    exactKeys(parsed.qualityMinimums, [
+      'workExplicitOrRepeated',
+      'temporaryState',
+      'conflictOrChange',
+      'ambiguousAbstention',
+      'crossDomainPairs',
+    ])
+    for (const value of Object.values(parsed.qualityMinimums)) {
+      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+        throw new Error('invalid manifest quality minimum')
+      }
+    }
+    if (typeof parsed.backgroundMinimumTurns !== 'number'
+      || !Number.isSafeInteger(parsed.backgroundMinimumTurns)
+      || parsed.backgroundMinimumTurns < 1) {
+      throw new Error('invalid manifest.backgroundMinimumTurns')
+    }
+    return parsed as DatasetManifestV2
+  }
   return parsed as DatasetManifest
 }
 
@@ -337,7 +387,9 @@ export async function verifyDatasetManifest(
     if (digest !== entry.sha256) throw new Error(`SHA-256 mismatch for ${entry.path}`)
     const loaded = entry.kind === 'development'
       ? await loadDevelopmentDataset(datasetPath)
-      : await loadHeldOutInputs(datasetPath)
+      : entry.kind === 'held-out-input'
+        ? await loadHeldOutInputs(datasetPath)
+        : await loadBackgroundTurns(datasetPath)
     if (loaded.length !== entry.caseCount) {
       throw new Error(`case count mismatch for ${entry.path}`)
     }

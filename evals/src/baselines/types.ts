@@ -35,6 +35,7 @@ export interface EvaluationBaseline {
     | 'plain-memory'
     | 'semantic-memory-rag'
     | 'manual-profile'
+    | 'full-history'
   readonly governedCandidateState: boolean
   evaluate(input: BaselineInput, signal?: AbortSignal): Promise<BaselineOutput>
 }
