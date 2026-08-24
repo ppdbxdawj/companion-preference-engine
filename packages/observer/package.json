@@ -15,7 +15,7 @@
   ],
   "scripts": {
     "build": "tsdown src/index.ts --format esm --dts --clean",
-    "test": "vitest run --root ../.. packages/observer/src/fake-observer.test.ts",
+    "test": "vitest run --root ../.. packages/observer/src",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

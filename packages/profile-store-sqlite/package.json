@@ -1,0 +1,31 @@
+{
+  "name": "@companion-preference/profile-store-sqlite",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations"
+  ],
+  "scripts": {
+    "build": "tsdown src/index.ts --format esm --dts --clean",
+    "test": "vitest run --root ../.. packages/profile-store-sqlite/src",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@companion-preference/contracts": "workspace:*",
+    "@companion-preference/preference-core": "workspace:*",
+    "better-sqlite3": "13.0.3",
+    "valibot": "1.4.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13"
+  }
+}

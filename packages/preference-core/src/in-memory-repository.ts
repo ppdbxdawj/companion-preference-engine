@@ -9,7 +9,8 @@ import type {
   RevokePreferenceCommand, SuppressCandidateCommand, UpdateConnectionSettingsCommand,
 } from '@companion-preference/contracts'
 import type {
-  CandidateSuppression, CompleteEvidenceProcessing, EvidenceClaim, EvidenceClaimRef,
+  CandidateSuppression, CompleteEvidenceProcessing, DiscardEvidenceProcessing,
+  EvidenceClaim, EvidenceClaimRef,
   IngestEvidenceResult, PreferenceRepository,
 } from './repository.js'
 import { ActivePreferenceSlotOccupiedError, CandidateIdempotencyConflictError } from './repository.js'
@@ -18,7 +19,8 @@ import { ActionPayloadConflictError, InvalidTransitionError, RevisionConflictErr
 export type RepositoryAtomicStep =
   | 'after-state' | 'after-audit' | 'after-receipt' | 'before-commit'
 export type RepositoryOperation =
-  | 'ingest-evidence' | 'complete-evidence' | 'propose-candidate' | 'confirm-candidate'
+  | 'ingest-evidence' | 'complete-evidence' | 'discard-evidence'
+  | 'propose-candidate' | 'confirm-candidate'
   | 'reject-candidate' | 'delete-candidate' | 'suppress-candidate'
   | 'create-explicit-preference' | 'revise-preference' | 'revoke-preference'
   | 'update-connection-settings' | 'report-projection-status' | 'record-policy-decision'
@@ -38,6 +40,7 @@ type State = {
     actionId: string; mutation: string; payloadHash: string; result: unknown; recordedAt: string
   }>
   audits: AuditEvent[]; completions: Record<string, CompletionProjection>
+  discards?: Record<string, DiscardProjection>
   settings?: Record<string, ConnectionSettings>
   evidenceTombstones?: Record<string, EvidenceProvenance>
   policyDecisionDigests?: Record<string, string>
@@ -46,6 +49,11 @@ type State = {
 type CompletionProjection = {
   evidenceId: string; workerId: string; claimToken: string; leaseVersion: number
   expectedSettingsRevision: number; candidateIdempotencyDigests: string[]; occurredAt: string
+}
+type DiscardProjection = {
+  evidenceId: string; workerId: string; claimToken: string; leaseVersion: number
+  expectedSettingsRevision: number
+  reasonCode: DiscardEvidenceProcessing['reasonCode']; occurredAt: string
 }
 const clone = <T>(v: T): T => structuredClone(v)
 const canonical = (v: unknown): string => {
@@ -82,6 +90,7 @@ export class InMemoryPreferenceRepository implements PreferenceRepository {
       ? clone(options.snapshot.state as State)
       : { evidence: {}, candidates: {}, preferences: {}, suppressions: [], receipts: {}, audits: [], completions: {} }
     this.state.completions ??= {}
+    this.state.discards ??= {}
   this.state.preferences ??= {}; this.state.suppressions ??= []; this.state.receipts ??= {}
     this.state.settings ??= {}; this.state.evidenceTombstones ??= {}
     this.state.policyDecisionDigests ??= {}; this.state.tombstoneActionDigests ??= {}
@@ -197,6 +206,61 @@ export class InMemoryPreferenceRepository implements PreferenceRepository {
       this.state.completions[key] = clone(projection)
       this.options.failAt?.('complete-evidence', 'after-receipt')
       this.options.failAt?.('complete-evidence', 'before-commit')
+    }, true, true))
+  }
+  discardEvidenceProcessingAtomically(c: DiscardEvidenceProcessing): Promise<void> {
+    return Promise.resolve().then(() => this.atomic('discard-evidence', () => {
+      const projection: DiscardProjection = {
+        evidenceId: c.claim.evidenceId,
+        workerId: c.claim.workerId,
+        claimToken: c.claim.claimToken,
+        leaseVersion: c.claim.leaseVersion,
+        expectedSettingsRevision: c.expectedSettingsRevision,
+        reasonCode: c.reasonCode,
+        occurredAt: c.occurredAt,
+      }
+      const key = canonical({
+        evidenceId: c.claim.evidenceId,
+        workerId: c.claim.workerId,
+        claimToken: c.claim.claimToken,
+        leaseVersion: c.claim.leaseVersion,
+      })
+      const replay = this.state.discards![key]
+      if (replay) {
+        if (canonical(replay) !== canonical(projection)) {
+          throw new ActionPayloadConflictError(`discard:${key}`)
+        }
+        return
+      }
+
+      const record = this.stale(c.claim, c.occurredAt)
+      const identity = auditIdentity(record.evidence.identity)
+      const settings = this.state.settings![this.settingsKey(
+        identity,
+        record.evidence.identity.hostId,
+      )] ?? this.defaultSettings(identity, record.evidence.identity.hostId)
+      if (c.expectedSettingsRevision !== settings.revision) {
+        throw new RevisionConflictError(c.expectedSettingsRevision, settings.revision)
+      }
+
+      record.state = 'failed'
+      record.lease = undefined
+      this.options.failAt?.('discard-evidence', 'after-state')
+      this.state.audits.push({
+        schemaVersion: 1,
+        id: c.auditEventId,
+        identity,
+        actor: 'observer',
+        kind: 'evidence-processing-completed',
+        reasonCode: c.reasonCode,
+        entity: { kind: 'evidence', evidenceId: record.evidence.id },
+        settingsRevision: c.expectedSettingsRevision,
+        occurredAt: c.occurredAt,
+      })
+      this.options.failAt?.('discard-evidence', 'after-audit')
+      this.state.discards![key] = clone(projection)
+      this.options.failAt?.('discard-evidence', 'after-receipt')
+      this.options.failAt?.('discard-evidence', 'before-commit')
     }, true, true))
   }
   getEvidenceProvenance(id: string): Promise<EvidenceProvenance | undefined> {

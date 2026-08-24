@@ -3,10 +3,12 @@ import {
   identityContextFixture,
   interactionEvidenceFixture,
   pendingCandidateProposalFixture,
+  preferenceIdentityFixture,
 } from '@companion-preference/contracts'
 import type { InteractionEvidence, PendingCandidateProposal } from '@companion-preference/contracts'
 import { InMemoryPreferenceRepository } from './in-memory-repository.js'
-import type { EvidenceCompletionReplay } from './repository.js'
+import { ActionPayloadConflictError, RevisionConflictError } from './lifecycle.js'
+import type { DiscardEvidenceProcessing, EvidenceCompletionReplay } from './repository.js'
 
 type InspectableSnapshot = {
   state: {
@@ -118,6 +120,190 @@ describe('PreferenceRepository contract', () => {
     await repository.completeEvidenceProcessingAtomically(command)
     await repository.completeEvidenceProcessingAtomically(command)
     expect(await repository.listCandidates()).toHaveLength(1)
+  })
+
+  it('atomically terminally discards a valid claim under the current settings fence', async () => {
+    const repository = createRepository()
+    const evidence = structuredClone(interactionEvidenceFixture) as unknown as InteractionEvidence
+    await repository.updateConnectionSettingsAtomically({
+      actionId: 'settings-before-discard',
+      identity: structuredClone(preferenceIdentityFixture),
+      hostId: evidence.identity.hostId,
+      expectedSettingsRevision: 0,
+      patch: { observeEnabled: true, learnEnabled: true },
+      occurredAt: '2026-08-21T03:59:00Z',
+    })
+    await repository.ingestEvidenceAtomically(evidence)
+    const claim = (await repository.claimNextEvidence(
+      'discard-worker',
+      '2026-08-21T04:10:00Z',
+      '2026-08-21T04:00:00Z',
+    ))!
+    const settings = await repository.updateConnectionSettingsAtomically({
+      actionId: 'settings-revoked-during-observation',
+      identity: structuredClone(preferenceIdentityFixture),
+      hostId: evidence.identity.hostId,
+      expectedSettingsRevision: 1,
+      patch: { learnEnabled: false },
+      occurredAt: '2026-08-21T04:00:30Z',
+    })
+    const command: DiscardEvidenceProcessing = {
+      claim,
+      expectedSettingsRevision: settings.revision,
+      reasonCode: 'stale-settings-revision',
+      auditEventId: 'audit-discarded-evidence',
+      occurredAt: '2026-08-21T04:01:00Z',
+    }
+
+    await repository.discardEvidenceProcessingAtomically(command)
+    await repository.discardEvidenceProcessingAtomically({
+      ...command,
+      auditEventId: 'ignored-audit-id-on-discard-replay',
+    })
+    await expect(repository.discardEvidenceProcessingAtomically({
+      ...command,
+      reasonCode: 'late-result-discarded',
+    })).rejects.toBeInstanceOf(ActionPayloadConflictError)
+
+    expect(await repository.claimNextEvidence(
+      'worker-after-discard',
+      '2026-08-21T04:20:00Z',
+      '2026-08-21T04:11:00Z',
+    )).toBeUndefined()
+    expect(await repository.listCandidates()).toEqual([])
+    expect(await repository.listAuditEvents({
+      identity: evidence.identity,
+      kinds: ['evidence-processing-completed'],
+    })).toEqual([{
+      schemaVersion: 1,
+      id: 'audit-discarded-evidence',
+      identity: structuredClone(preferenceIdentityFixture),
+      actor: 'observer',
+      kind: 'evidence-processing-completed',
+      reasonCode: 'stale-settings-revision',
+      entity: { kind: 'evidence', evidenceId: evidence.id },
+      settingsRevision: settings.revision,
+      occurredAt: command.occurredAt,
+    }])
+
+    const restarted = new InMemoryPreferenceRepository({
+      claimTokenFactory: () => 'claim-token-after-discard-restart',
+      auditEventIdFactory: () => 'audit-after-discard-restart',
+      snapshot: repository.exportSnapshot(),
+    })
+    await restarted.discardEvidenceProcessingAtomically(command)
+    expect(await restarted.claimNextEvidence(
+      'worker-after-restart',
+      '2026-08-21T04:20:00Z',
+      '2026-08-21T04:11:00Z',
+    )).toBeUndefined()
+  })
+
+  it('rejects discard on a stale claim or stale canonical settings fence without terminalizing evidence', async () => {
+    const repository = createRepository()
+    const evidence = structuredClone(interactionEvidenceFixture) as unknown as InteractionEvidence
+    await repository.updateConnectionSettingsAtomically({
+      actionId: 'settings-before-rejected-discard',
+      identity: structuredClone(preferenceIdentityFixture),
+      hostId: evidence.identity.hostId,
+      expectedSettingsRevision: 0,
+      patch: { observeEnabled: true, learnEnabled: true },
+      occurredAt: '2026-08-21T03:59:00Z',
+    })
+    await repository.ingestEvidenceAtomically(evidence)
+    const claim = (await repository.claimNextEvidence(
+      'discard-worker',
+      '2026-08-21T04:10:00Z',
+      '2026-08-21T04:00:00Z',
+    ))!
+    const settings = await repository.updateConnectionSettingsAtomically({
+      actionId: 'settings-advance-before-rejected-discard',
+      identity: structuredClone(preferenceIdentityFixture),
+      hostId: evidence.identity.hostId,
+      expectedSettingsRevision: 1,
+      patch: { learnEnabled: false },
+      occurredAt: '2026-08-21T04:00:30Z',
+    })
+    const command: DiscardEvidenceProcessing = {
+      claim,
+      expectedSettingsRevision: settings.revision,
+      reasonCode: 'late-result-discarded',
+      auditEventId: 'audit-valid-discard',
+      occurredAt: '2026-08-21T04:01:00Z',
+    }
+
+    for (const claimPatch of [
+      { workerId: 'wrong-worker' },
+      { claimToken: 'wrong-claim-token' },
+      { leaseVersion: claim.leaseVersion + 1 },
+    ]) {
+      await expect(repository.discardEvidenceProcessingAtomically({
+        ...command,
+        claim: { ...claim, ...claimPatch },
+      })).rejects.toMatchObject({ code: 'STALE_CLAIM' })
+    }
+    await expect(repository.discardEvidenceProcessingAtomically({
+      ...command,
+      expectedSettingsRevision: settings.revision - 1,
+    })).rejects.toEqual(new RevisionConflictError(
+      settings.revision - 1,
+      settings.revision,
+    ))
+
+    await repository.discardEvidenceProcessingAtomically(command)
+    expect(await repository.listAuditEvents({
+      identity: evidence.identity,
+      kinds: ['evidence-processing-completed'],
+    })).toHaveLength(1)
+  })
+
+  it('rolls back terminal discard state, audit, and replay fence together', async () => {
+    let fail = true
+    const repository = new InMemoryPreferenceRepository({
+      claimTokenFactory: () => 'claim-token-discard-rollback',
+      auditEventIdFactory: () => 'audit-discard-rollback-setup',
+      failAt: (operation, step) => {
+        if (fail && operation === 'discard-evidence' && step === 'before-commit') {
+          fail = false
+          throw new Error('rollback-discard')
+        }
+      },
+    })
+    const evidence = structuredClone(interactionEvidenceFixture) as unknown as InteractionEvidence
+    await repository.updateConnectionSettingsAtomically({
+      actionId: 'settings-discard-rollback',
+      identity: structuredClone(preferenceIdentityFixture),
+      hostId: evidence.identity.hostId,
+      expectedSettingsRevision: 0,
+      patch: { observeEnabled: true, learnEnabled: true },
+      occurredAt: '2026-08-21T03:59:00Z',
+    })
+    await repository.ingestEvidenceAtomically(evidence)
+    const claim = (await repository.claimNextEvidence(
+      'discard-rollback-worker',
+      '2026-08-21T04:10:00Z',
+      '2026-08-21T04:00:00Z',
+    ))!
+    const command: DiscardEvidenceProcessing = {
+      claim,
+      expectedSettingsRevision: 1,
+      reasonCode: 'late-result-discarded',
+      auditEventId: 'audit-discard-rollback',
+      occurredAt: '2026-08-21T04:01:00Z',
+    }
+
+    await expect(repository.discardEvidenceProcessingAtomically(command))
+      .rejects.toThrow('rollback-discard')
+    expect(await repository.listAuditEvents({
+      identity: evidence.identity,
+      kinds: ['evidence-processing-completed'],
+    })).toEqual([])
+
+    await repository.discardEvidenceProcessingAtomically(command)
+    expect(await repository.listAuditEvents({
+      identity: evidence.identity,
+      kinds: ['evidence-processing-completed'],
+    })).toHaveLength(1)
   })
 
   it('creates one strict content-free observer audit per inserted candidate and none on exact replay', async () => {
