@@ -1,0 +1,19 @@
+{
+  "name": "@companion-preference/m0-terminal",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsdown src/index.ts --format esm --dts --clean --external @companion-preference/contracts --external @companion-preference/observer --external @companion-preference/preference-core",
+    "demo": "tsx src/index.ts",
+    "test": "vitest run --root ../.. apps/m0-terminal/src",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "start": "node dist/index.mjs"
+  },
+  "dependencies": {
+    "@companion-preference/contracts": "workspace:*",
+    "@companion-preference/observer": "workspace:*",
+    "@companion-preference/preference-core": "workspace:*"
+  }
+}

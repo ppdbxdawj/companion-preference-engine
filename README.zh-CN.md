@@ -4,7 +4,7 @@
 
 [English README](README.md) · [Apache-2.0](LICENSE) · [贡献指南](CONTRIBUTING.md) · [安全策略](SECURITY.md)
 
-> **开发预览版 — M0**
+> **开发预览版 — M0.5 检查点已通过**
 >
 > 本仓库是实验性的核心库，不是聊天产品；目前还没有 runtime 进程、UI、
 > MCP 服务、HTTP 服务、SQLite 后端或 AIRI adapter。
@@ -42,6 +42,8 @@
   严格审计事件和分阶段回滚。
 - 本地连接设置、adapter 投影真相、无内容策略审计、证据 tombstone、候选
   引用清理，以及可选的依赖偏好撤销。
+- 一个确定性的合成终端演练：展示候选确认、按作用域生效和撤销。它是交互
+  检查点，不是模型能力或聊天体验。
 
 当前实现是可嵌入的基础层，不是完成的陪伴 agent。
 
@@ -58,8 +60,18 @@ pnpm run check
 pnpm run build
 ```
 
-`pnpm run check` 会运行全部 Vitest、两个 package 的类型检查和
+`pnpm run check` 会运行全部 Vitest、所有 workspace 的类型检查和
 `git diff --check`。当前没有 `pnpm dev`，因为 runtime 和 UI package 尚未实现。
+
+本地重放 M0.5 终端演练：
+
+```bash
+pnpm --filter @companion-preference/m0-terminal demo
+```
+
+它只使用合成数据、Fake Observer、内存状态和固定模板。请先阅读已记录的
+[M0.5 检查点](docs/m0p5-experience-checkpoint.md)，不要将它视为真实产品或模型
+效果证据。
 
 ## Package 结构
 
@@ -71,6 +83,9 @@ packages/preference-core
   explain               可读的解析解释
   repository            宿主无关仓储 port 与错误
   in-memory-repository  本地参考实现
+packages/observer       Fake Observer 与宿主无关的 Observer port
+evals                   合成评测数据、基线与指标
+apps/m0-terminal        确定性的 M0.5 交互演练
 docs/plans              设计、实现、路由和预览计划
 ```
 
@@ -105,7 +120,7 @@ contracts、生命周期、作用域解析、解释、仓储原子行为和隐�
 
 ## 路线图
 
-后续层次会与核心分开推进：
+M0.5 交互检查点已经通过。后续层次会与核心分开推进：
 
 1. 带明确 snapshot/migration 语义的本地 runtime 和持久化 adapter。
 2. 第一个接入 AIRI 的宿主 adapter，再扩展到其他陪伴宿主。

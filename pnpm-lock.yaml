@@ -30,11 +30,35 @@ importers:
         specifier: 4.1.10
         version: 4.1.10(@types/node@24.13.3)(@vitest/coverage-v8@4.1.10)(vite@8.0.16(@types/node@24.13.3)(esbuild@0.27.7)(tsx@4.21.0))
 
+  apps/m0-terminal:
+    dependencies:
+      '@companion-preference/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@companion-preference/observer':
+        specifier: workspace:*
+        version: link:../../packages/observer
+      '@companion-preference/preference-core':
+        specifier: workspace:*
+        version: link:../../packages/preference-core
+
+  evals:
+    dependencies:
+      '@companion-preference/contracts':
+        specifier: workspace:*
+        version: link:../packages/contracts
+
   packages/contracts:
     dependencies:
       valibot:
         specifier: 1.4.2
         version: 1.4.2(typescript@5.9.3)
+
+  packages/observer:
+    dependencies:
+      '@companion-preference/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/preference-core:
     dependencies:
