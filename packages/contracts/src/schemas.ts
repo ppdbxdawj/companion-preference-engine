@@ -335,6 +335,8 @@ export type PreferenceCandidate = {
   scope: PreferenceScope
   projection: ProjectionPolicy
   provenance: CandidateProvenance
+  /** Content-free host identifiers captured when the proposal is created. */
+  sourceHostIds: string[]
   evidenceIds: string[]
   counterEvidenceIds: string[]
   confidence: number
@@ -410,6 +412,7 @@ export type ProposeCandidateCommand = {
   scope: PreferenceScope
   projection: ProjectionPolicy
   provenance: ExternalProposalProvenance
+  sourceHostIds: string[]
   evidenceIds: string[]
   counterEvidenceIds: string[]
   confidence: number
@@ -953,15 +956,16 @@ export const ObserverEvidenceProvenanceSchema = v.strictObject({kind:v.literal('
 export const ExternalProposalProvenanceSchema = v.strictObject({kind:v.literal('external-proposal'),channel:v.picklist(['runtime-client','mcp']),proposerId:id,proposalRef:id})
 export const CandidateProvenanceSchema = v.variant('kind',[ObserverEvidenceProvenanceSchema,ExternalProposalProvenanceSchema])
 export const CandidateIdempotencyKeySchema = v.strictObject({version:v.literal(1),algorithm:v.literal('sha256'),digest:v.pipe(v.string(),v.regex(/^[0-9a-f]{64}$/))})
-export const PreferenceCandidateSchema = v.pipe(v.strictObject({schemaVersion:v.literal(1),id,identity:PreferenceIdentitySchema,preference:PreferenceSchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,provenance:CandidateProvenanceSchema,evidenceIds:nonemptyIds,counterEvidenceIds:nonemptyIds,confidence:finite01,riskCategory:PreferenceRiskCategorySchema,status:CandidateStatusSchema,idempotencyKey:CandidateIdempotencyKeySchema,revision:rev0,createdAt:iso,updatedAt:iso,expiresAt:v.optional(iso)}),v.check(x => x.provenance.kind !== 'observer-evidence' || JSON.stringify(x.evidenceIds) === JSON.stringify(x.provenance.evidenceIds)))
-export const PendingCandidateProposalSchema = v.strictObject({preference:PreferenceSchema,identity:PreferenceIdentitySchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,provenance:CandidateProvenanceSchema,evidenceIds:nonemptyIds,counterEvidenceIds:nonemptyIds,confidence:finite01,riskCategory:PreferenceRiskCategorySchema,idempotencyKey:CandidateIdempotencyKeySchema,status:v.literal('pending_confirmation')}) as unknown as v.GenericSchema<PendingCandidateProposal>
+const sourceHostIds = v.pipe(v.array(id), v.minLength(1), v.check(values => new Set(values).size === values.length))
+export const PreferenceCandidateSchema = v.pipe(v.strictObject({schemaVersion:v.literal(1),id,identity:PreferenceIdentitySchema,preference:PreferenceSchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,provenance:CandidateProvenanceSchema,sourceHostIds,evidenceIds:nonemptyIds,counterEvidenceIds:nonemptyIds,confidence:finite01,riskCategory:PreferenceRiskCategorySchema,status:CandidateStatusSchema,idempotencyKey:CandidateIdempotencyKeySchema,revision:rev0,createdAt:iso,updatedAt:iso,expiresAt:v.optional(iso)}),v.check(x => x.provenance.kind !== 'observer-evidence' || JSON.stringify(x.evidenceIds) === JSON.stringify(x.provenance.evidenceIds)))
+export const PendingCandidateProposalSchema = v.strictObject({preference:PreferenceSchema,identity:PreferenceIdentitySchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,provenance:CandidateProvenanceSchema,sourceHostIds,evidenceIds:nonemptyIds,counterEvidenceIds:nonemptyIds,confidence:finite01,riskCategory:PreferenceRiskCategorySchema,idempotencyKey:CandidateIdempotencyKeySchema,status:v.literal('pending_confirmation')}) as unknown as v.GenericSchema<PendingCandidateProposal>
 // Record revision is independent from the optional lineage edge.
 export const PreferenceRecordSchema = v.pipe(v.strictObject({schemaVersion:v.literal(1),id,identity:PreferenceIdentitySchema,preference:PreferenceSchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,authority:PreferenceAuthoritySchema,revision:rev1,status:PreferenceStatusSchema,supersedes:v.optional(id),supersededBy:v.optional(id),evidenceIds:v.array(id),createdAt:iso,updatedAt:iso,expiresAt:v.optional(iso)}),v.check(x => x.supersedes!==x.id && (x.status==='superseded' ? x.supersededBy!==undefined && x.supersededBy!==x.id : x.supersededBy===undefined)))
 export const EffectiveProfileQuerySchema = v.strictObject({userId:id,companionId:id,relationshipId:id,hostId:id,domain:DomainSchema,workspaceId:v.optional(id),taskId:v.optional(id),now:iso})
 export const BehaviorGuidanceSchema = v.strictObject({responseDetail:v.optional(PreferenceValueSchemas['interaction.response_detail']),directness:v.optional(PreferenceValueSchemas['interaction.directness']),initiative:v.optional(PreferenceValueSchemas['interaction.initiative']),interruptionPolicy:v.optional(PreferenceValueSchemas['interaction.interruption_policy']),approvalStyle:v.optional(PreferenceValueSchemas['work.approval_style']),verificationDepth:v.optional(PreferenceValueSchemas['work.verification_depth']),supportStyle:v.optional(PreferenceValueSchemas['companion.support_style']),avoid:v.optional(v.array(v.literal('generic_reassurance')))})
 export const SupersededPreferenceExpectationSchema = v.strictObject({preferenceId:id,expectedRevision:rev1})
 const baseCommand = {actionId:id,occurredAt:iso}
-export const ProposeCandidateCommandSchema = v.strictObject({...baseCommand,candidateId:id,identity:PreferenceIdentitySchema,preference:PreferenceSchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,provenance:ExternalProposalProvenanceSchema,evidenceIds:v.array(id),counterEvidenceIds:v.array(id),confidence:finite01,riskCategory:PreferenceRiskCategorySchema,idempotencyKey:CandidateIdempotencyKeySchema,expiresAt:v.optional(iso)})
+export const ProposeCandidateCommandSchema = v.strictObject({...baseCommand,candidateId:id,identity:PreferenceIdentitySchema,preference:PreferenceSchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,provenance:ExternalProposalProvenanceSchema,sourceHostIds,evidenceIds:v.array(id),counterEvidenceIds:v.array(id),confidence:finite01,riskCategory:PreferenceRiskCategorySchema,idempotencyKey:CandidateIdempotencyKeySchema,expiresAt:v.optional(iso)})
 export const ConfirmCandidateCommandSchema = v.strictObject({...baseCommand,candidateId:id,expectedCandidateRevision:rev0,preferenceId:id,preference:PreferenceSchema,scope:PreferenceScopeSchema,projection:ProjectionPolicySchema,supersedesPreference:v.optional(SupersededPreferenceExpectationSchema)})
 export const RejectCandidateCommandSchema = v.strictObject({...baseCommand,candidateId:id,expectedCandidateRevision:rev0,reasonCode:v.optional(id)})
 export const DeleteCandidateCommandSchema = v.strictObject({...baseCommand,candidateId:id,expectedCandidateRevision:rev0,reasonCode:id})
@@ -1592,27 +1596,69 @@ export const AuditQuerySchema = v.pipe(
 // T2C2C HTTP DTO freeze. HTTP only projects the commands and queries above.
 // Runtime derives this principal from bearer-token configuration; request
 // bodies never supply or override it.
+export const RESET_CONFIRMATION_PHRASE = 'RESET ALL COMPANION PREFERENCE DATA' as const
 export type HttpPrincipal = { schemaVersion: 1; principalId: string; identity: PreferenceIdentity; hostId: string }
-export type HttpErrorCode = 'bad-request' | 'unauthorized' | 'forbidden' | 'not-found' | 'revision-conflict' | 'action-payload-conflict' | 'settings-revision-conflict' | 'reset-in-progress' | 'internal-error'
-export type HttpErrorDetail = { code: HttpErrorCode; message: string; retryable: boolean; currentRevision?: number }
+export type HttpErrorCode = 'bad-request' | 'unauthorized' | 'forbidden' | 'not-found' | 'revision-conflict' | 'action-payload-conflict' | 'settings-revision-conflict' | 'active-preference-conflict' | 'candidate-idempotency-conflict' | 'invalid-transition' | 'runtime-maintenance' | 'runtime-closed' | 'internal-error'
+export type HttpErrorDetail =
+  | { code: 'revision-conflict' | 'settings-revision-conflict'; message: string; retryable: false; currentRevision: number }
+  | { code: 'runtime-maintenance'; message: string; retryable: true }
+  | { code: Exclude<HttpErrorCode, 'revision-conflict' | 'settings-revision-conflict' | 'runtime-maintenance'>; message: string; retryable: false }
 export type HttpSuccessResponse<T> = { ok: true; requestId: string; data: T }
 export type HttpErrorResponse = { ok: false; requestId: string; error: HttpErrorDetail }
 export type HttpResponse<T> = HttpSuccessResponse<T> | HttpErrorResponse
 
-export type IngestEvidenceHttpRequest = { evidence: InteractionEvidence; expectedSettingsRevision: number }
+// Ingest always re-authorizes against canonical settings inside the application
+// service. An HTTP-level expectedSettingsRevision pre-read would be a TOCTOU
+// fence, so the transport deliberately carries only the evidence event.
+export type IngestEvidenceHttpRequest = { evidence: InteractionEvidence }
 export type EffectiveProfileHttpRequest = { query: EffectiveProfileQuery }
 export type CandidateListHttpRequest = { identity: PreferenceIdentity; statuses?: CandidateStatus[] }
-export type PreferenceListHttpRequest = { identity: PreferenceIdentity; statuses?: PreferenceStatus[] }
+// T9 exposes active preferences only; historical state is available through
+// content-free audit/export rather than a transport-only status filter.
+// Active-preference resolution is contextual. The full identity context is
+// supplied by the configured host client; the runtime must never invent an
+// empty session, host, or domain to satisfy the application API.
+export type PreferenceListHttpRequest = { identity: IdentityContext }
 export type ConnectionSettingsHttpRequest = { identity: PreferenceIdentity; hostId: string }
+export type ConnectionListHttpRequest = { identity: PreferenceIdentity }
 export type AuditHttpRequest = { query: AuditQuery }
+/**
+ * Adapter/runtime policy decisions are mutation-like at the transport boundary.
+ * The action ID is deliberately transport-owned until the application gains an
+ * atomic receipt for this operation; callers must still provide one so the
+ * eventual repository fence does not require another wire-format change.
+ */
+export type RecordPolicyDecisionHttpRequest = { actionId: string; decision: ContentFreePolicyDecision }
+export type ExportDataHttpRequest = { identity: IdentityContext }
+export type ResetHttpRequest = { confirmation: typeof RESET_CONFIRMATION_PHRASE }
+export type ResetHttpResult = { status: 'reset' }
 export type GovernanceMutationCommand = ProposeCandidateCommand | ConfirmCandidateCommand | RejectCandidateCommand | DeleteCandidateCommand | SuppressCandidateCommand | CreateExplicitPreferenceCommand | RevisePreferenceCommand | RevokePreferenceCommand | UpdateConnectionSettingsCommand | ReportProjectionStatusCommand | DeleteEvidenceCommand
 export type GovernanceMutationHttpRequest = { command: GovernanceMutationCommand }
 
-export type IngestEvidenceHttpResult = { evidenceId: string; disposition: 'accepted' | 'duplicate'; settingsRevision: number }
-export type EffectiveProfileHttpResult = { guidance: BehaviorGuidance; profileRevision: number; settingsRevision: number }
+export type IngestEvidenceHttpResult =
+  | { evidenceId: string; disposition: 'accepted' | 'duplicate'; settingsRevision: number }
+  | { evidenceId: string; disposition: 'discarded'; reasonCode: Extract<ContentFreePolicyReasonCode, 'observe-disabled' | 'collection-disabled'>; settingsRevision: number }
+export type GovernanceMutationHttpResult =
+  | { kind: 'candidate'; actionId: string; candidate: PreferenceCandidate }
+  | { kind: 'preference'; actionId: string; preference: PreferenceRecord }
+  | { kind: 'connection-settings'; actionId: string; settings: ConnectionSettings }
+  | { kind: 'projection-status'; actionId: string; projectionStatus: AdapterProjectionStatus }
+  | { kind: 'evidence-deletion'; actionId: string; result: DeleteEvidenceResult }
+  | { kind: 'completed'; actionId: string }
+// The runtime has no independent profile revision. Conditional reads use an
+// ETag over this canonical projection plus settingsRevision.
+export type EffectiveProfileHttpResult = { guidance: BehaviorGuidance; settingsRevision: number }
 export type CandidateListHttpResult = { candidates: PreferenceCandidate[] }
 export type PreferenceListHttpResult = { preferences: PreferenceRecord[] }
+export type ConnectionListHttpResult = { connections: ConnectionSettings[] }
 export type AuditHttpResult = { events: AuditEvent[] }
+export type PreferenceDataExportHttpResult = {
+  evidence: EvidenceProvenance[]
+  candidates: PreferenceCandidate[]
+  activePreferences: PreferenceRecord[]
+  connectionSettings: ConnectionSettings
+  auditEvents: AuditEvent[]
+}
 
 // Strict runtime schemas for the frozen T2C2C HTTP DTO contract.
 export const HttpPrincipalSchema = v.strictObject({
@@ -1630,16 +1676,44 @@ export const HttpErrorCodeSchema = v.picklist([
   'revision-conflict',
   'action-payload-conflict',
   'settings-revision-conflict',
-  'reset-in-progress',
+  'active-preference-conflict',
+  'candidate-idempotency-conflict',
+  'invalid-transition',
+  'runtime-maintenance',
+  'runtime-closed',
   'internal-error',
 ]) as v.GenericSchema<HttpErrorCode>
 
-export const HttpErrorDetailSchema = v.strictObject({
-  code: HttpErrorCodeSchema,
-  message: v.pipe(v.string(), v.nonEmpty()),
-  retryable: v.boolean(),
-  currentRevision: v.optional(rev0),
-}) as v.GenericSchema<HttpErrorDetail>
+const httpErrorMessage = v.pipe(v.string(), v.nonEmpty())
+export const HttpErrorDetailSchema = v.variant('code', [
+  v.strictObject({
+    code: v.picklist(['revision-conflict', 'settings-revision-conflict']),
+    message: httpErrorMessage,
+    retryable: v.literal(false),
+    currentRevision: rev0,
+  }),
+  v.strictObject({
+    code: v.literal('runtime-maintenance'),
+    message: httpErrorMessage,
+    retryable: v.literal(true),
+  }),
+  v.strictObject({
+    code: v.picklist([
+      'bad-request',
+      'unauthorized',
+      'forbidden',
+      'not-found',
+      'action-payload-conflict',
+      'active-preference-conflict',
+      'candidate-idempotency-conflict',
+      'invalid-transition',
+      'runtime-closed',
+      'internal-error',
+    ]),
+    message: httpErrorMessage,
+    retryable: v.literal(false),
+  }),
+]) as v.GenericSchema<HttpErrorDetail>
 
 export const HttpErrorResponseSchema = v.strictObject({
   ok: v.literal(false),
@@ -1649,7 +1723,6 @@ export const HttpErrorResponseSchema = v.strictObject({
 
 export const IngestEvidenceHttpRequestSchema = v.strictObject({
   evidence: InteractionEvidenceSchema,
-  expectedSettingsRevision: rev0,
 }) as v.GenericSchema<IngestEvidenceHttpRequest>
 
 export const EffectiveProfileHttpRequestSchema = v.strictObject({
@@ -1664,10 +1737,7 @@ export const CandidateListHttpRequestSchema = v.strictObject({
 }) as v.GenericSchema<CandidateListHttpRequest>
 
 export const PreferenceListHttpRequestSchema = v.strictObject({
-  identity: PreferenceIdentitySchema,
-  statuses: v.optional(
-    v.pipe(v.array(PreferenceStatusSchema), v.minLength(1), v.check(uniqueValues)),
-  ),
+  identity: IdentityContextSchema,
 }) as v.GenericSchema<PreferenceListHttpRequest>
 
 export const ConnectionSettingsHttpRequestSchema = v.strictObject({
@@ -1675,9 +1745,30 @@ export const ConnectionSettingsHttpRequestSchema = v.strictObject({
   hostId: v.pipe(v.string(), v.nonEmpty()),
 }) as v.GenericSchema<ConnectionSettingsHttpRequest>
 
+export const ConnectionListHttpRequestSchema = v.strictObject({
+  identity: PreferenceIdentitySchema,
+}) as v.GenericSchema<ConnectionListHttpRequest>
+
 export const AuditHttpRequestSchema = v.strictObject({
   query: AuditQuerySchema,
 }) as v.GenericSchema<AuditHttpRequest>
+
+export const RecordPolicyDecisionHttpRequestSchema = v.strictObject({
+  actionId: id,
+  decision: ContentFreePolicyDecisionSchema,
+}) as v.GenericSchema<RecordPolicyDecisionHttpRequest>
+
+export const ExportDataHttpRequestSchema = v.strictObject({
+  identity: IdentityContextSchema,
+}) as v.GenericSchema<ExportDataHttpRequest>
+
+export const ResetHttpRequestSchema = v.strictObject({
+  confirmation: v.literal(RESET_CONFIRMATION_PHRASE),
+}) as v.GenericSchema<ResetHttpRequest>
+
+export const ResetHttpResultSchema = v.strictObject({
+  status: v.literal('reset'),
+}) as v.GenericSchema<ResetHttpResult>
 
 export const GovernanceMutationCommandSchema = v.union([
   ProposeCandidateCommandSchema,
@@ -1697,15 +1788,39 @@ export const GovernanceMutationHttpRequestSchema = v.strictObject({
   command: GovernanceMutationCommandSchema,
 }) as v.GenericSchema<GovernanceMutationHttpRequest>
 
-export const IngestEvidenceHttpResultSchema = v.strictObject({
-  evidenceId: v.pipe(v.string(), v.nonEmpty()),
-  disposition: v.picklist(['accepted', 'duplicate']),
-  settingsRevision: rev0,
-}) as v.GenericSchema<IngestEvidenceHttpResult>
+export const IngestEvidenceHttpResultSchema = v.variant('disposition', [
+  v.strictObject({
+    evidenceId: id,
+    disposition: v.literal('accepted'),
+    settingsRevision: rev0,
+  }),
+  v.strictObject({
+    evidenceId: id,
+    disposition: v.literal('duplicate'),
+    settingsRevision: rev0,
+  }),
+  v.strictObject({
+    evidenceId: id,
+    disposition: v.literal('discarded'),
+    reasonCode: v.picklist(['observe-disabled', 'collection-disabled']),
+    settingsRevision: rev0,
+  }),
+]) as v.GenericSchema<IngestEvidenceHttpResult>
+
+// HTTP returns the domain result actually replayed by the atomic repository,
+// not its private mutation-receipt storage record. Void application commands
+// are represented by a content-free action acknowledgement.
+export const GovernanceMutationHttpResultSchema = v.variant('kind', [
+  v.strictObject({ kind: v.literal('candidate'), actionId: id, candidate: PreferenceCandidateSchema }),
+  v.strictObject({ kind: v.literal('preference'), actionId: id, preference: PreferenceRecordSchema }),
+  v.strictObject({ kind: v.literal('connection-settings'), actionId: id, settings: ConnectionSettingsSchema }),
+  v.strictObject({ kind: v.literal('projection-status'), actionId: id, projectionStatus: AdapterProjectionStatusSchema }),
+  v.strictObject({ kind: v.literal('evidence-deletion'), actionId: id, result: DeleteEvidenceResultSchema }),
+  v.strictObject({ kind: v.literal('completed'), actionId: id }),
+]) as v.GenericSchema<GovernanceMutationHttpResult>
 
 export const EffectiveProfileHttpResultSchema = v.strictObject({
   guidance: BehaviorGuidanceSchema,
-  profileRevision: rev0,
   settingsRevision: rev0,
 }) as v.GenericSchema<EffectiveProfileHttpResult>
 
@@ -1717,9 +1832,24 @@ export const PreferenceListHttpResultSchema = v.strictObject({
   preferences: v.array(PreferenceRecordSchema),
 }) as v.GenericSchema<PreferenceListHttpResult>
 
+export const ConnectionListHttpResultSchema = v.pipe(
+  v.strictObject({ connections: v.array(ConnectionSettingsSchema) }),
+  v.check(({ connections }) => connections.every((connection, index) => (
+    index === 0 || connections[index - 1]!.hostId < connection.hostId
+  ))),
+) as v.GenericSchema<ConnectionListHttpResult>
+
 export const AuditHttpResultSchema = v.strictObject({
   events: v.array(AuditEventSchema),
 }) as v.GenericSchema<AuditHttpResult>
+
+export const PreferenceDataExportHttpResultSchema = v.strictObject({
+  evidence: v.array(EvidenceProvenanceSchema),
+  candidates: v.array(PreferenceCandidateSchema),
+  activePreferences: v.array(PreferenceRecordSchema),
+  connectionSettings: ConnectionSettingsSchema,
+  auditEvents: v.array(AuditEventSchema),
+}) as v.GenericSchema<PreferenceDataExportHttpResult>
 
 export const HttpSuccessResponseSchema = <T>(
   data: v.GenericSchema<T>,

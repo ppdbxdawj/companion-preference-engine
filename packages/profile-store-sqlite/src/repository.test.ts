@@ -14,10 +14,12 @@ import {
   updateConnectionSettingsCommandFixture,
 } from '../../contracts/src/fixtures.js'
 import type {
+  ConnectionSettings,
   ConfirmCandidateCommand,
   CreateExplicitPreferenceCommand,
   InteractionEvidence,
   PendingCandidateProposal,
+  PreferenceIdentity,
   ProposeCandidateCommand,
   UpdateConnectionSettingsCommand,
 } from '../../contracts/src/schemas.js'
@@ -77,6 +79,10 @@ const createRepository = (
   auditEventIdFactory: () => `sqlite-audit-${++nextAudit}`,
   ...(failAt === undefined ? {} : { failAt }),
 })
+
+type ConnectionListRepository = {
+  listConnectionSettings(identity: PreferenceIdentity): Promise<ConnectionSettings[]>
+}
 
 const cloneEvidence = (): InteractionEvidence =>
   structuredClone(interactionEvidenceFixture) as unknown as InteractionEvidence
@@ -168,7 +174,7 @@ describe('SqlitePreferenceRepository persistence oracle', () => {
     ).map((row) => row.name)
     expect(actualTables).toEqual([...tableNames].sort())
     expect(queryRows(database, 'SELECT version FROM schema_migrations ORDER BY version'))
-      .toEqual([{ version: 1 }])
+      .toEqual([{ version: 1 }, { version: 2 }])
 
     database.close()
   })
@@ -201,6 +207,9 @@ describe('SqlitePreferenceRepository persistence oracle', () => {
     const repository = createRepository(database)
     const original = structuredClone(proposeCandidateCommandFixture) as unknown as ProposeCandidateCommand
     const inserted = await repository.proposeCandidateAtomically(original)
+    expect(inserted).toMatchObject({
+      sourceHostIds: [interactionEvidenceFixture.identity.hostId],
+    })
 
     const sameDigest = {
       ...structuredClone(original),
@@ -677,6 +686,7 @@ describe('SqlitePreferenceRepository persistence oracle', () => {
 
     expect(await repository.getCandidate('candidate-1')).toMatchObject({
       status: 'confirmed',
+      sourceHostIds: [interactionEvidenceFixture.identity.hostId],
       evidenceIds: [interactionEvidenceFixture.id],
       counterEvidenceIds: [],
       provenance: {
@@ -777,6 +787,49 @@ describe('SqlitePreferenceRepository persistence oracle', () => {
       applyEnabled: false,
     })
 
+    database.close()
+  })
+
+  it('lists persisted connections only, isolated by identity and sorted by host ID', async () => {
+    const database = openFileDatabase()
+    const repository = createRepository(database)
+    const listRepository = repository as PreferenceRepository & ConnectionListRepository
+    expect(await listRepository.listConnectionSettings(preferenceIdentityFixture)).toEqual([])
+
+    await repository.getConnectionSettings(preferenceIdentityFixture, 'default-must-not-appear')
+    for (const command of [
+      {
+        ...structuredClone(updateConnectionSettingsCommandFixture),
+        actionId: 'sqlite-settings-zeta',
+        hostId: 'zeta-host',
+        expectedSettingsRevision: 0,
+      },
+      {
+        ...structuredClone(updateConnectionSettingsCommandFixture),
+        actionId: 'sqlite-settings-alpha',
+        hostId: 'alpha-host',
+        expectedSettingsRevision: 0,
+      },
+      {
+        ...structuredClone(updateConnectionSettingsCommandFixture),
+        actionId: 'sqlite-settings-other-identity',
+        identity: { ...preferenceIdentityFixture, relationshipId: 'other-relationship' },
+        hostId: 'private-other-host',
+        expectedSettingsRevision: 0,
+      },
+    ] as unknown as UpdateConnectionSettingsCommand[]) {
+      await repository.updateConnectionSettingsAtomically(command)
+    }
+
+    const connections = await listRepository.listConnectionSettings(preferenceIdentityFixture)
+    expect(connections.map(connection => connection.hostId)).toEqual(['alpha-host', 'zeta-host'])
+    expect(connections.every(connection => (
+      connection.identity.relationshipId === preferenceIdentityFixture.relationshipId
+    ))).toBe(true)
+    expect(await listRepository.listConnectionSettings({
+      ...preferenceIdentityFixture,
+      relationshipId: 'missing-relationship',
+    })).toEqual([])
     database.close()
   })
 })

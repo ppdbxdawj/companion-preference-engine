@@ -12,6 +12,7 @@ const snapshot: ExperienceSnapshot = {
     scope: { kind: 'domain', domain: 'work' },
     projection: { allowedHosts: ['m0-terminal'], allowedDomains: ['work'] },
     provenance: { kind: 'observer-evidence', evidenceIds: ['m0-evidence-work-1'] },
+    sourceHostIds: ['m0-terminal'],
     evidenceIds: ['m0-evidence-work-1'], counterEvidenceIds: [], confidence: 0.92,
     riskCategory: 'standard', status: 'pending_confirmation',
     idempotencyKey: { version: 1, algorithm: 'sha256', digest: '1111111111111111111111111111111111111111111111111111111111111111' },

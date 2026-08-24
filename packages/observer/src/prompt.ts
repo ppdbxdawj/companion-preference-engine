@@ -282,6 +282,7 @@ function parseCandidate(
     scope: selectedScope,
     projection,
     provenance: { kind: 'observer-evidence' as const, evidenceIds: [...evidenceIds] },
+    sourceHostIds: [...new Set(cited.map(item => item.identity.hostId))].sort(),
     evidenceIds: [...evidenceIds],
     counterEvidenceIds: [...counterEvidenceIds],
     confidence,

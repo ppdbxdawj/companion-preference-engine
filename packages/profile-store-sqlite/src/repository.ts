@@ -289,6 +289,7 @@ export class SqlitePreferenceRepository implements PreferenceRepository {
         scope: parseJson(row.scope_json, 'candidate scope'),
         projection: parseJson(row.projection_json, 'candidate projection'),
         provenance: parseJson(row.provenance_json, 'candidate provenance'),
+        sourceHostIds: parseJson(row.source_host_ids_json, 'candidate source hosts'),
         evidenceIds: parseJson(row.evidence_ids_json, 'candidate evidence IDs'),
         counterEvidenceIds: parseJson(row.counter_evidence_ids_json, 'candidate counter-evidence IDs'),
         confidence: row.confidence,
@@ -484,11 +485,11 @@ export class SqlitePreferenceRepository implements PreferenceRepository {
     const insertCandidate = this.database.prepare(`
       INSERT INTO candidates (
         id, user_id, companion_id, relationship_id, preference_key, preference_value,
-        scope_json, projection_json, provenance_json, evidence_ids_json,
+        scope_json, projection_json, provenance_json, source_host_ids_json, evidence_ids_json,
         counter_evidence_ids_json, confidence, risk_category, status,
         idempotency_version, idempotency_algorithm, idempotency_digest, revision,
         created_at, updated_at, expires_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     for (const candidate of state.candidates.values()) {
       parseContract<PreferenceCandidate>(PreferenceCandidateSchema, candidate, 'candidate write')
@@ -502,6 +503,7 @@ export class SqlitePreferenceRepository implements PreferenceRepository {
         canonical(candidate.scope),
         canonical(candidate.projection),
         canonical(candidate.provenance),
+        canonical(candidate.sourceHostIds),
         canonical(candidate.evidenceIds),
         canonical(candidate.counterEvidenceIds),
         candidate.confidence,
@@ -1018,6 +1020,7 @@ export class SqlitePreferenceRepository implements PreferenceRepository {
           scope: clone(command.scope),
           projection: clone(command.projection),
           provenance: clone(command.provenance),
+          sourceHostIds: clone(command.sourceHostIds),
           evidenceIds: clone(command.evidenceIds),
           counterEvidenceIds: clone(command.counterEvidenceIds),
           confidence: command.confidence,
@@ -1390,6 +1393,13 @@ export class SqlitePreferenceRepository implements PreferenceRepository {
   getConnectionSettings(identity: PreferenceIdentity, hostId: string): Promise<ConnectionSettings> {
     const current = this.loadState().settings.get(settingsKey(identity, hostId))
     return Promise.resolve(clone(current ?? defaultSettings(identity, hostId)))
+  }
+
+  listConnectionSettings(identity: PreferenceIdentity): Promise<ConnectionSettings[]> {
+    return Promise.resolve([...this.loadState().settings.values()]
+      .filter((settings) => sameIdentity(settings.identity, identity))
+      .sort((left, right) => compare(left.hostId, right.hostId))
+      .map(clone))
   }
 
   updateConnectionSettingsAtomically(command: UpdateConnectionSettingsCommand): Promise<ConnectionSettings> {

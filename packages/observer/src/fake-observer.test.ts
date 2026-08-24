@@ -51,6 +51,7 @@ const supplied: PendingCandidateProposal = {
     allowedDomains: ['work'],
   },
   provenance: { kind: 'observer-evidence', evidenceIds: [evidence.id] },
+  sourceHostIds: ['reference-host'],
   evidenceIds: [evidence.id],
   counterEvidenceIds: [],
   confidence: 0.9,

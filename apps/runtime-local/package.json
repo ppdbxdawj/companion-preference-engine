@@ -15,6 +15,7 @@
   ],
   "scripts": {
     "build": "tsdown src/main.ts --format esm --dts --clean --external @companion-preference/contracts --external @companion-preference/observer --external @companion-preference/preference-core --external @companion-preference/profile-store-sqlite --external proper-lockfile",
+    "dev": "tsx src/dev.ts",
     "test": "vitest run --root ../.. apps/runtime-local/src",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
@@ -23,7 +24,10 @@
     "@companion-preference/observer": "workspace:*",
     "@companion-preference/preference-core": "workspace:*",
     "@companion-preference/profile-store-sqlite": "workspace:*",
-    "proper-lockfile": "4.1.2"
+    "@hono/node-server": "2.1.0",
+    "hono": "4.13.3",
+    "proper-lockfile": "4.1.2",
+    "valibot": "1.4.2"
   },
   "devDependencies": {
     "@types/proper-lockfile": "4.1.4"

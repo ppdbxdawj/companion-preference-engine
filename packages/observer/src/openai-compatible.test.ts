@@ -73,6 +73,7 @@ const proposal: PendingCandidateProposal = {
   scope: { kind: 'domain', domain: 'work' },
   projection: { allowedHosts: ['reference-host'], allowedDomains: ['work'] },
   provenance: { kind: 'observer-evidence', evidenceIds: ['evidence-1'] },
+  sourceHostIds: ['reference-host'],
   evidenceIds: ['evidence-1'],
   counterEvidenceIds: [],
   confidence: 0.9,

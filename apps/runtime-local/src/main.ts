@@ -105,6 +105,8 @@ export type RuntimeLocalComposition = RuntimeLifecycleCoordinator<PreferenceAppl
 
 export * from './application.js'
 export * from './processor.js'
+export * from './auth.js'
 export * from './runtime-lifecycle.js'
 export * from './runtime-lock.js'
+export * from './server.js'
 export * from './settings.js'

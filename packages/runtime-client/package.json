@@ -1,0 +1,25 @@
+{
+  "name": "@companion-preference/runtime-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown src/index.ts --format esm --dts --clean",
+    "test": "vitest run --root ../.. packages/runtime-client/src/client.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@companion-preference/contracts": "workspace:*",
+    "valibot": "1.4.2"
+  }
+}

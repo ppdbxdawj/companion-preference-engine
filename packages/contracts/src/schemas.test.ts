@@ -1503,6 +1503,7 @@ describe('candidate lifecycle and provenance schemas', () => {
       'scope',
       'projection',
       'provenance',
+      'sourceHostIds',
       'confidence',
       'riskCategory',
       'status',
@@ -1564,6 +1565,23 @@ describe('candidate lifecycle and provenance schemas', () => {
         },
       }).success,
     ).toBe(false)
+  })
+
+  it('requires content-free source host IDs at candidate creation and rejects empty or duplicate values', () => {
+    for (const sourceHostIds of [[], ['reference-host', 'reference-host']]) {
+      expect(v.safeParse(PreferenceCandidateSchema, {
+        ...preferenceCandidateFixture,
+        sourceHostIds,
+      }).success).toBe(false)
+      expect(v.safeParse(PendingCandidateProposalSchema, {
+        ...pendingCandidateProposalFixture,
+        sourceHostIds,
+      }).success).toBe(false)
+      expect(v.safeParse(ProposeCandidateCommandSchema, {
+        ...proposeCandidateCommandFixture,
+        sourceHostIds,
+      }).success).toBe(false)
+    }
   })
 
   it('rejects unknown candidate fields and schema versions', () => {
@@ -1971,6 +1989,7 @@ describe('MutationReceiptSchema', () => {
         }).success,
       ).toBe(false)
     }
+
   })
 })
 
@@ -2648,18 +2667,58 @@ describe('T2C2C host-neutral HTTP DTO contracts', () => {
         f.deleteEvidenceHttpRequestFixture,
       ),
     ).toEqual(f.deleteEvidenceHttpRequestFixture)
+    expect(v.parse(
+      s.RecordPolicyDecisionHttpRequestSchema,
+      f.recordPolicyDecisionHttpRequestFixture,
+    )).toEqual(f.recordPolicyDecisionHttpRequestFixture)
+    expect(v.parse(
+      s.ExportDataHttpRequestSchema,
+      f.exportDataHttpRequestFixture,
+    )).toEqual(f.exportDataHttpRequestFixture)
+    expect(v.parse(
+      s.PreferenceListHttpRequestSchema,
+      f.preferenceListHttpRequestFixture,
+    )).toEqual(f.preferenceListHttpRequestFixture)
+    expect(v.parse(
+      s.ConnectionListHttpRequestSchema,
+      f.connectionListHttpRequestFixture,
+    )).toEqual(f.connectionListHttpRequestFixture)
+    expect(v.parse(
+      s.ConnectionListHttpResultSchema,
+      f.connectionListHttpResultFixture,
+    )).toEqual(f.connectionListHttpResultFixture)
+    expect(v.parse(
+      s.PreferenceDataExportHttpResultSchema,
+      f.preferenceDataExportHttpResultFixture,
+    )).toEqual(f.preferenceDataExportHttpResultFixture)
+    expect(v.parse(
+      s.ResetHttpRequestSchema,
+      f.resetHttpRequestFixture,
+    )).toEqual(f.resetHttpRequestFixture)
+    expect(v.parse(
+      s.ResetHttpResultSchema,
+      f.resetHttpResultFixture,
+    )).toEqual(f.resetHttpResultFixture)
     expect(
       v.parse(
-        s.HttpResponseSchema(s.MutationReceiptSchema),
+        s.HttpResponseSchema(s.GovernanceMutationHttpResultSchema),
         f.mutationSuccessHttpResponseFixture,
       ),
     ).toEqual(f.mutationSuccessHttpResponseFixture)
     expect(
       v.parse(
-        s.HttpResponseSchema(s.MutationReceiptSchema),
+        s.HttpResponseSchema(s.GovernanceMutationHttpResultSchema),
         f.revisionErrorHttpResponseFixture,
       ),
     ).toEqual(f.revisionErrorHttpResponseFixture)
+    expect(v.parse(
+      s.IngestEvidenceHttpResultSchema,
+      f.acceptedIngestEvidenceHttpResultFixture,
+    )).toEqual(f.acceptedIngestEvidenceHttpResultFixture)
+    expect(v.parse(
+      s.IngestEvidenceHttpResultSchema,
+      f.discardedIngestEvidenceHttpResultFixture,
+    )).toEqual(f.discardedIngestEvidenceHttpResultFixture)
 
     expectTypeOf<v.InferOutput<typeof s.HttpPrincipalSchema>>().toEqualTypeOf<
       import('./schemas.js').HttpPrincipal
@@ -2668,13 +2727,31 @@ describe('T2C2C host-neutral HTTP DTO contracts', () => {
       v.InferOutput<typeof s.GovernanceMutationHttpRequestSchema>
     >().toEqualTypeOf<import('./schemas.js').GovernanceMutationHttpRequest>()
     expectTypeOf<
-      v.InferOutput<ReturnType<typeof s.HttpResponseSchema<import('./schemas.js').MutationReceipt>>>
-    >().toEqualTypeOf<import('./schemas.js').HttpResponse<import('./schemas.js').MutationReceipt>>()
+      v.InferOutput<ReturnType<typeof s.HttpResponseSchema<import('./schemas.js').GovernanceMutationHttpResult>>>
+    >().toEqualTypeOf<import('./schemas.js').HttpResponse<import('./schemas.js').GovernanceMutationHttpResult>>()
+    expectTypeOf<
+      v.InferOutput<typeof s.RecordPolicyDecisionHttpRequestSchema>
+    >().toEqualTypeOf<import('./schemas.js').RecordPolicyDecisionHttpRequest>()
+    expectTypeOf<
+      v.InferOutput<typeof s.PreferenceDataExportHttpResultSchema>
+    >().toEqualTypeOf<import('./schemas.js').PreferenceDataExportHttpResult>()
+    expectTypeOf<
+      v.InferOutput<typeof s.ConnectionListHttpRequestSchema>
+    >().toEqualTypeOf<import('./schemas.js').ConnectionListHttpRequest>()
+    expectTypeOf<
+      v.InferOutput<typeof s.ConnectionListHttpResultSchema>
+    >().toEqualTypeOf<import('./schemas.js').ConnectionListHttpResult>()
+    expectTypeOf<
+      v.InferOutput<typeof s.ResetHttpRequestSchema>
+    >().toEqualTypeOf<import('./schemas.js').ResetHttpRequest>()
+    expectTypeOf<
+      v.InferOutput<typeof s.ResetHttpResultSchema>
+    >().toEqualTypeOf<import('./schemas.js').ResetHttpResult>()
 
     expect(
-      v.safeParse(s.HttpResponseSchema(s.MutationReceiptSchema), {
+      v.safeParse(s.HttpResponseSchema(s.GovernanceMutationHttpResultSchema), {
         ...f.mutationSuccessHttpResponseFixture,
-        data: { ...f.mutationReceiptFixture, actionId: '' },
+        data: { ...f.mutationSuccessHttpResponseFixture.data, actionId: '' },
       }).success,
     ).toBe(false)
   })
@@ -2696,9 +2773,52 @@ describe('T2C2C host-neutral HTTP DTO contracts', () => {
     }
   })
 
+  it('keeps destructive reset exact, strict, and content-free', async () => {
+    const s = await import('./schemas.js')
+    const f = await import('./fixtures.js')
+
+    for (const request of [
+      { confirmation: '' },
+      { confirmation: s.RESET_CONFIRMATION_PHRASE.toLowerCase() },
+      { confirmation: `${s.RESET_CONFIRMATION_PHRASE} ` },
+      { ...f.resetHttpRequestFixture, bearerToken: 'secret-token' },
+      { ...f.resetHttpRequestFixture, reason: 'private' },
+    ]) {
+      expect(v.safeParse(s.ResetHttpRequestSchema, request).success).toBe(false)
+    }
+    for (const result of [
+      {},
+      { status: 'completed' },
+      { ...f.resetHttpResultFixture, deletedRecords: 42 },
+      { ...f.resetHttpResultFixture, databasePath: '/private/runtime.sqlite' },
+    ]) {
+      expect(v.safeParse(s.ResetHttpResultSchema, result).success).toBe(false)
+    }
+  })
+
   it('retains action idempotency and optimistic revision fences in mutation payloads', async () => {
     const s = await import('./schemas.js')
     const f = await import('./fixtures.js')
+
+    for (const command of [
+      f.proposeCandidateCommandFixture,
+      f.confirmCandidateCommandFixture,
+      f.rejectCandidateCommandFixture,
+      f.deleteCandidateCommandFixture,
+      f.suppressCandidateCommandFixture,
+      f.createExplicitPreferenceCommandFixture,
+      f.revisePreferenceCommandFixture,
+      f.revokePreferenceCommandFixture,
+      f.updateConnectionSettingsCommandFixture,
+      f.reportProjectionStatusCommandFixture,
+      f.deleteEvidenceCommandFixture,
+    ]) {
+      expect(v.safeParse(s.GovernanceMutationHttpRequestSchema, { command }).success).toBe(true)
+      const { actionId: _actionId, ...withoutActionId } = command
+      expect(v.safeParse(s.GovernanceMutationHttpRequestSchema, {
+        command: withoutActionId,
+      }).success).toBe(false)
+    }
 
     for (const patch of [
       { actionId: '' },
@@ -2711,6 +2831,17 @@ describe('T2C2C host-neutral HTTP DTO contracts', () => {
           command: { ...f.confirmCandidateCommandFixture, ...patch },
         }).success,
       ).toBe(false)
+    }
+
+    for (const input of [
+      { decision: f.contentFreePolicyDecisionFixture },
+      { actionId: '', decision: f.contentFreePolicyDecisionFixture },
+      {
+        ...f.recordPolicyDecisionHttpRequestFixture,
+        bearerToken: 'secret-token',
+      },
+    ]) {
+      expect(v.safeParse(s.RecordPolicyDecisionHttpRequestSchema, input).success).toBe(false)
     }
   })
 
@@ -2743,7 +2874,7 @@ describe('T2C2C host-neutral HTTP DTO contracts', () => {
       },
     ]) {
       expect(
-        v.safeParse(s.HttpResponseSchema(s.MutationReceiptSchema), input)
+        v.safeParse(s.HttpResponseSchema(s.GovernanceMutationHttpResultSchema), input)
           .success,
       ).toBe(false)
     }
@@ -2768,7 +2899,7 @@ describe('T2C2C host-neutral HTTP DTO contracts', () => {
     }
 
     expect(
-      v.safeParse(s.HttpResponseSchema(s.MutationReceiptSchema), {
+      v.safeParse(s.HttpResponseSchema(s.GovernanceMutationHttpResultSchema), {
         ...f.mutationSuccessHttpResponseFixture,
         error: f.revisionErrorHttpResponseFixture.error,
       }).success,
@@ -2787,7 +2918,7 @@ describe('T2C2C host-neutral HTTP DTO contracts', () => {
     ).toBe(false)
     expect(
       v.safeParse(s.PreferenceListHttpRequestSchema, {
-        identity: f.preferenceIdentityFixture,
+        identity: f.identityContextFixture,
         statuses: ['pending_confirmation'],
       }).success,
     ).toBe(false)
@@ -2799,24 +2930,26 @@ describe('T2C2C host-neutral HTTP DTO contracts', () => {
         }).success,
       ).toBe(false)
     }
-    for (const statuses of [[], ['active', 'active']]) {
+    for (const statuses of [[], ['active'], ['active', 'active']]) {
       expect(
         v.safeParse(s.PreferenceListHttpRequestSchema, {
-          identity: f.preferenceIdentityFixture,
+          identity: f.identityContextFixture,
           statuses,
         }).success,
       ).toBe(false)
     }
-    expect(
-      v.safeParse(s.IngestEvidenceHttpRequestSchema, {
-        ...f.ingestEvidenceHttpRequestFixture,
-        expectedSettingsRevision: -1,
-      }).success,
-    ).toBe(false)
+    for (const expectedSettingsRevision of [-1, 0, 1]) {
+      expect(
+        v.safeParse(s.IngestEvidenceHttpRequestSchema, {
+          ...f.ingestEvidenceHttpRequestFixture,
+          expectedSettingsRevision,
+        }).success,
+      ).toBe(false)
+    }
     expect(
       v.safeParse(s.EffectiveProfileHttpResultSchema, {
         guidance: f.behaviorGuidanceFixture,
-        profileRevision: -1,
+        profileRevision: 1,
         settingsRevision: 1,
       }).success,
     ).toBe(false)
@@ -2826,5 +2959,69 @@ describe('T2C2C host-neutral HTTP DTO contracts', () => {
         composedMessage: 'private',
       }).success,
     ).toBe(false)
+    expect(v.safeParse(s.PreferenceDataExportHttpResultSchema, {
+      ...f.preferenceDataExportHttpResultFixture,
+      learningPayload: { userText: 'private' },
+    }).success).toBe(false)
+    for (const input of [
+      {},
+      { identity: f.preferenceIdentityFixture, hostId: 'airi' },
+      { identity: { ...f.preferenceIdentityFixture, sessionId: 'session-private' } },
+      { identity: f.preferenceIdentityFixture, bearerToken: 'secret-token' },
+    ]) {
+      expect(v.safeParse(s.ConnectionListHttpRequestSchema, input).success).toBe(false)
+    }
+    for (const connections of [
+      [f.connectionSettingsFixture, f.airiConnectionSettingsFixture],
+      [f.airiConnectionSettingsFixture, f.airiConnectionSettingsFixture],
+    ]) {
+      expect(v.safeParse(s.ConnectionListHttpResultSchema, { connections }).success).toBe(false)
+    }
+  })
+
+  it('freezes canonical ingest, replay result, and lifecycle-unavailable semantics', async () => {
+    const s = await import('./schemas.js')
+    const f = await import('./fixtures.js')
+
+    for (const result of [
+      f.acceptedIngestEvidenceHttpResultFixture,
+      { ...f.acceptedIngestEvidenceHttpResultFixture, disposition: 'duplicate' },
+      f.discardedIngestEvidenceHttpResultFixture,
+    ]) {
+      expect(v.safeParse(s.IngestEvidenceHttpResultSchema, result).success).toBe(true)
+    }
+    for (const result of [
+      { ...f.discardedIngestEvidenceHttpResultFixture, reasonCode: 'learning-disabled' },
+      { ...f.discardedIngestEvidenceHttpResultFixture, learningPayload: { userText: 'private' } },
+      { ...f.acceptedIngestEvidenceHttpResultFixture, reasonCode: 'observe-disabled' },
+    ]) {
+      expect(v.safeParse(s.IngestEvidenceHttpResultSchema, result).success).toBe(false)
+    }
+
+    const actionResults = [
+      { kind: 'candidate', actionId: f.proposeCandidateCommandFixture.actionId, candidate: f.preferenceCandidateFixture },
+      { kind: 'preference', actionId: f.confirmCandidateCommandFixture.actionId, preference: f.activePreferenceRecordFixture },
+      { kind: 'connection-settings', actionId: f.updateConnectionSettingsCommandFixture.actionId, settings: f.connectionSettingsFixture },
+      { kind: 'projection-status', actionId: f.reportProjectionStatusCommandFixture.actionId, projectionStatus: f.adapterProjectionStatusFixture },
+      { kind: 'evidence-deletion', actionId: f.deleteEvidenceCommandFixture.actionId, result: f.deleteEvidenceResultFixture },
+      { kind: 'completed', actionId: f.rejectCandidateCommandFixture.actionId },
+    ]
+    for (const result of actionResults) {
+      expect(v.safeParse(s.GovernanceMutationHttpResultSchema, result).success).toBe(true)
+      expect(v.safeParse(s.GovernanceMutationHttpResultSchema, { ...result, actionId: '' }).success).toBe(false)
+    }
+    expect(v.safeParse(s.GovernanceMutationHttpResultSchema, f.mutationReceiptFixture).success).toBe(false)
+
+    for (const [code, retryable] of [
+      ['runtime-maintenance', true],
+      ['runtime-closed', false],
+    ] as const) {
+      expect(v.safeParse(s.HttpErrorResponseSchema, {
+        ok: false,
+        requestId: `request-${code}`,
+        error: { code, message: 'Runtime unavailable.', retryable },
+      }).success).toBe(true)
+    }
+    expect(v.safeParse(s.HttpErrorCodeSchema, 'reset-in-progress').success).toBe(false)
   })
 })

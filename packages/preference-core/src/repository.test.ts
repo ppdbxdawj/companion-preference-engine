@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
+  connectionSettingsFixture,
   identityContextFixture,
   interactionEvidenceFixture,
   pendingCandidateProposalFixture,
   preferenceIdentityFixture,
+  updateConnectionSettingsCommandFixture,
 } from '@companion-preference/contracts'
-import type { InteractionEvidence, PendingCandidateProposal } from '@companion-preference/contracts'
+import type {
+  ConnectionSettings,
+  InteractionEvidence,
+  PendingCandidateProposal,
+  PreferenceIdentity,
+  UpdateConnectionSettingsCommand,
+} from '@companion-preference/contracts'
 import { InMemoryPreferenceRepository } from './in-memory-repository.js'
 import { ActionPayloadConflictError, RevisionConflictError } from './lifecycle.js'
 import type { DiscardEvidenceProcessing, EvidenceCompletionReplay } from './repository.js'
@@ -36,6 +44,10 @@ const createRepository = () => new InMemoryPreferenceRepository({
   claimTokenFactory: () => 'claim-token-from-test',
   auditEventIdFactory: () => 'audit-event-from-test',
 })
+
+type ConnectionListRepository = {
+  listConnectionSettings(identity: PreferenceIdentity): Promise<ConnectionSettings[]>
+}
 
 describe('PreferenceRepository contract', () => {
   it('atomically ingests and deduplicates the canonical identity/host/sourceRef tuple', async () => {
@@ -120,6 +132,41 @@ describe('PreferenceRepository contract', () => {
     await repository.completeEvidenceProcessingAtomically(command)
     await repository.completeEvidenceProcessingAtomically(command)
     expect(await repository.listCandidates()).toHaveLength(1)
+    expect(await repository.getCandidate('candidate-completion-1')).toMatchObject({
+      sourceHostIds: [interactionEvidenceFixture.identity.hostId],
+    })
+  })
+
+  it('persists proposal-captured source hosts without deriving them from raw evidence', async () => {
+    const repository = createRepository()
+    await repository.ingestEvidenceAtomically(structuredClone(interactionEvidenceFixture) as unknown as InteractionEvidence)
+    const claim = (await repository.claimNextEvidence('worker', '2026-08-21T04:02:00Z', '2026-08-21T04:01:00Z'))!
+    const proposal = {
+      ...structuredClone(pendingCandidateProposalFixture),
+      sourceHostIds: ['proposal-origin-host'],
+    } as unknown as PendingCandidateProposal
+    const command = {
+      claim,
+      expectedSettingsRevision: interactionEvidenceFixture.policySnapshot.settingsRevision,
+      candidates: [{ candidateId: 'candidate-source-host', proposal, auditEventId: 'audit-source-host' }],
+      auditEventId: 'audit-completion-source-host',
+      occurredAt: '2026-08-21T04:01:30Z',
+    } as const
+    await repository.completeEvidenceProcessingAtomically(command)
+    await repository.completeEvidenceProcessingAtomically(command)
+
+    expect(await repository.getCandidate('candidate-source-host')).toMatchObject({
+      identity: preferenceIdentityFixture,
+      sourceHostIds: ['proposal-origin-host'],
+    })
+    const snapshot = repository.exportSnapshot() as unknown as {
+      state: { candidates: Record<string, { id: string }> }
+    }
+    const candidateSnapshot = Object.values(snapshot.state.candidates).find(
+      (candidate) => candidate.id === 'candidate-source-host',
+    )
+    expect(candidateSnapshot).toBeDefined()
+    expect(JSON.stringify(candidateSnapshot)).not.toContain(interactionEvidenceFixture.learningPayload.userText)
   })
 
   it('atomically terminally discards a valid claim under the current settings fence', async () => {
@@ -506,6 +553,45 @@ describe('PreferenceRepository contract', () => {
     await expect(repository.ingestEvidenceAtomically(structuredClone(interactionEvidenceFixture) as unknown as InteractionEvidence)).rejects.toThrow('injected-failure')
     expect(await repository.listEvidenceProvenance(structuredClone(identityContextFixture))).toEqual([])
     expect(await repository.listAuditEvents({ identity: structuredClone(identityContextFixture) })).toEqual([])
+  })
+
+  it('lists only explicitly configured identity connections in stable host order', async () => {
+    const repository = createRepository()
+    const listRepository = repository as unknown as ConnectionListRepository
+    expect(await listRepository.listConnectionSettings(preferenceIdentityFixture)).toEqual([])
+
+    await repository.getConnectionSettings(preferenceIdentityFixture, 'default-must-not-appear')
+    const commands = [
+      {
+        ...structuredClone(updateConnectionSettingsCommandFixture),
+        actionId: 'action-settings-zeta',
+        hostId: 'zeta-host',
+        expectedSettingsRevision: 0,
+      },
+      {
+        ...structuredClone(updateConnectionSettingsCommandFixture),
+        actionId: 'action-settings-alpha',
+        hostId: 'alpha-host',
+        expectedSettingsRevision: 0,
+      },
+      {
+        ...structuredClone(updateConnectionSettingsCommandFixture),
+        actionId: 'action-settings-other-user',
+        identity: { ...preferenceIdentityFixture, userId: 'other-user' },
+        hostId: 'private-other-host',
+        expectedSettingsRevision: 0,
+      },
+    ] as unknown as UpdateConnectionSettingsCommand[]
+    for (const command of commands) await repository.updateConnectionSettingsAtomically(command)
+
+    const connections = await listRepository.listConnectionSettings(preferenceIdentityFixture)
+    expect(connections.map(connection => connection.hostId)).toEqual(['alpha-host', 'zeta-host'])
+    expect(connections.every(connection => connection.identity.userId === preferenceIdentityFixture.userId)).toBe(true)
+    expect(connections).not.toContainEqual(connectionSettingsFixture)
+    expect(await listRepository.listConnectionSettings({
+      ...preferenceIdentityFixture,
+      userId: 'missing-user',
+    })).toEqual([])
   })
 })
 

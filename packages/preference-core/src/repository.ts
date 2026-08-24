@@ -140,6 +140,7 @@ export interface PreferenceRepository {
   getPreference(id: string): Promise<PreferenceRecord | undefined>
   listActivePreferences(identity: IdentityContext): Promise<PreferenceRecord[]>
   getConnectionSettings(identity: PreferenceIdentity, hostId: string): Promise<ConnectionSettings>
+  listConnectionSettings(identity: PreferenceIdentity): Promise<ConnectionSettings[]>
   updateConnectionSettingsAtomically(command: UpdateConnectionSettingsCommand): Promise<ConnectionSettings>
   reportAdapterProjectionStatusAtomically(command: ReportProjectionStatusCommand): Promise<AdapterProjectionStatus>
   recordPolicyDecisionAtomically(decision: ContentFreePolicyDecision): Promise<void>

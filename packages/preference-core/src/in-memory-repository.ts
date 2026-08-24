@@ -359,6 +359,7 @@ export class InMemoryPreferenceRepository implements PreferenceRepository {
         schemaVersion: 1, id: c.candidateId, identity: clone(c.identity),
         preference: clone(c.preference), scope: clone(c.scope), projection: clone(c.projection),
         provenance: clone(c.provenance), evidenceIds: clone(c.evidenceIds),
+        sourceHostIds: clone(c.sourceHostIds),
         counterEvidenceIds: clone(c.counterEvidenceIds), confidence: c.confidence,
         riskCategory: c.riskCategory, status: 'pending_confirmation',
         idempotencyKey: clone(c.idempotencyKey), revision: 0,
@@ -591,6 +592,12 @@ export class InMemoryPreferenceRepository implements PreferenceRepository {
   } }
   getConnectionSettings(i: PreferenceIdentity, h: string): Promise<ConnectionSettings> {
     return Promise.resolve(clone(this.state.settings![this.settingsKey(i, h)] ?? this.defaultSettings(i, h)))
+  }
+  listConnectionSettings(i: PreferenceIdentity): Promise<ConnectionSettings[]> {
+    return Promise.resolve(Object.values(this.state.settings!)
+      .filter((settings) => sameAuditIdentity(settings.identity, i))
+      .sort((left, right) => compare(left.hostId, right.hostId))
+      .map(clone))
   }
   updateConnectionSettingsAtomically(c: UpdateConnectionSettingsCommand): Promise<ConnectionSettings> {
     return Promise.resolve().then(() => this.atomic('update-connection-settings', () => {

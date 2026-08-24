@@ -198,6 +198,10 @@ export class PreferenceApplication {
     return this.repository.getConnectionSettings(identity, hostId)
   }
 
+  listConnectionSettings(identity: PreferenceIdentity): Promise<ConnectionSettings[]> {
+    return this.repository.listConnectionSettings(identity)
+  }
+
   async updateConnectionSettings(command: UpdateConnectionSettingsCommand): Promise<ConnectionSettings> {
     const previous = await this.repository.getConnectionSettings(command.identity, command.hostId)
     const current = await this.repository.updateConnectionSettingsAtomically(command)

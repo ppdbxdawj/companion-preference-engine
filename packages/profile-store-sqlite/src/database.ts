@@ -14,6 +14,10 @@ const migrationSql = readFileSync(
   new URL('../migrations/0001_initial.sql', import.meta.url),
   'utf8',
 )
+const sourceHostIdsMigrationSql = readFileSync(
+  new URL('../migrations/0002_candidate_source_hosts.sql', import.meta.url),
+  'utf8',
+)
 
 const isMemoryFilename = (filename: string): boolean =>
   filename === ':memory:' ||
@@ -56,6 +60,12 @@ export const migrateSqliteDatabase = (database: SqliteDatabase): void => {
       database
         .prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)')
         .run(1, new Date().toISOString())
+    }
+    if (currentVersion < 2) {
+      database.exec(sourceHostIdsMigrationSql)
+      database
+        .prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)')
+        .run(2, new Date().toISOString())
     }
   })
 
