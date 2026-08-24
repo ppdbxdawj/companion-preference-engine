@@ -1,0 +1,35 @@
+{
+  "name": "@companion-preference/runtime-local",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.mts",
+      "import": "./dist/main.mjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown src/main.ts --format esm --dts --clean --external @companion-preference/contracts --external @companion-preference/observer --external @companion-preference/preference-core --external @companion-preference/profile-store-sqlite --external proper-lockfile",
+    "dev": "tsx src/dev.ts",
+    "test": "vitest run --root ../.. apps/runtime-local/src",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@companion-preference/contracts": "workspace:*",
+    "@companion-preference/observer": "workspace:*",
+    "@companion-preference/preference-core": "workspace:*",
+    "@companion-preference/profile-store-sqlite": "workspace:*",
+    "@hono/node-server": "2.1.0",
+    "hono": "4.13.3",
+    "proper-lockfile": "4.1.2",
+    "valibot": "1.4.2"
+  },
+  "devDependencies": {
+    "@types/proper-lockfile": "4.1.4"
+  }
+}

@@ -130,6 +130,7 @@ export const preferenceCandidateFixture = {
   scope: workspacePreferenceScopeFixture,
   projection: projectionPolicyFixture,
   provenance: observerEvidenceProvenanceFixture,
+  sourceHostIds: [identityContextFixture.hostId],
   evidenceIds: [interactionEvidenceFixture.id],
   counterEvidenceIds: [],
   confidence: 0.82,
@@ -147,6 +148,7 @@ export const pendingCandidateProposalFixture = {
   scope: workspacePreferenceScopeFixture,
   projection: projectionPolicyFixture,
   provenance: observerEvidenceProvenanceFixture,
+  sourceHostIds: [identityContextFixture.hostId],
   evidenceIds: [interactionEvidenceFixture.id],
   counterEvidenceIds: [],
   confidence: 0.82,
@@ -214,6 +216,7 @@ export const proposeCandidateCommandFixture = {
   scope: workspacePreferenceScopeFixture,
   projection: projectionPolicyFixture,
   provenance: externalProposalProvenanceFixture,
+  sourceHostIds: [identityContextFixture.hostId],
   evidenceIds: [],
   counterEvidenceIds: [],
   confidence: 0.7,
@@ -372,6 +375,20 @@ export const connectionSettingsFixture = {
   updatedAt: '2026-08-21T03:21:00Z',
 } as const
 
+export const airiConnectionSettingsFixture = {
+  schemaVersion: 1,
+  identity: preferenceIdentityFixture,
+  hostId: 'airi',
+  collectionPolicy: collectionPolicyFixture,
+  outboundInferencePolicy: disabledOutboundInferencePolicyFixture,
+  projectionPolicy: projectionPolicyFixture,
+  observeEnabled: true,
+  learnEnabled: false,
+  applyEnabled: true,
+  revision: 2,
+  updatedAt: '2026-08-21T03:19:00Z',
+} as const
+
 export const updateConnectionSettingsCommandFixture = {
   actionId: 'action-update-connection-1',
   identity: preferenceIdentityFixture,
@@ -522,12 +539,52 @@ export const httpPrincipalFixture = {
 
 export const ingestEvidenceHttpRequestFixture = {
   evidence: interactionEvidenceFixture,
-  expectedSettingsRevision:
-    interactionEvidenceFixture.policySnapshot.settingsRevision,
+} as const
+
+export const acceptedIngestEvidenceHttpResultFixture = {
+  evidenceId: interactionEvidenceFixture.id,
+  disposition: 'accepted',
+  settingsRevision: interactionEvidenceFixture.policySnapshot.settingsRevision,
+} as const
+
+export const discardedIngestEvidenceHttpResultFixture = {
+  evidenceId: 'evidence-discarded-1',
+  disposition: 'discarded',
+  reasonCode: 'observe-disabled',
+  settingsRevision: 2,
 } as const
 
 export const effectiveProfileHttpRequestFixture = {
   query: effectiveProfileQueryFixture,
+} as const
+
+export const preferenceListHttpRequestFixture = {
+  identity: identityContextFixture,
+} as const
+
+export const connectionListHttpRequestFixture = {
+  identity: preferenceIdentityFixture,
+} as const
+
+export const connectionListHttpResultFixture = {
+  connections: [airiConnectionSettingsFixture, connectionSettingsFixture],
+} as const
+
+export const recordPolicyDecisionHttpRequestFixture = {
+  actionId: 'action-record-policy-decision-1',
+  decision: contentFreePolicyDecisionFixture,
+} as const
+
+export const exportDataHttpRequestFixture = {
+  identity: identityContextFixture,
+} as const
+
+export const resetHttpRequestFixture = {
+  confirmation: 'RESET ALL COMPANION PREFERENCE DATA',
+} as const
+
+export const resetHttpResultFixture = {
+  status: 'reset',
 } as const
 
 export const governanceMutationHttpRequestFixture = {
@@ -541,7 +598,11 @@ export const deleteEvidenceHttpRequestFixture = {
 export const mutationSuccessHttpResponseFixture = {
   ok: true,
   requestId: 'request-1',
-  data: mutationReceiptFixture,
+  data: {
+    kind: 'preference',
+    actionId: confirmCandidateCommandFixture.actionId,
+    preference: activePreferenceRecordFixture,
+  },
 } as const
 
 export const revisionErrorHttpResponseFixture = {
@@ -553,4 +614,12 @@ export const revisionErrorHttpResponseFixture = {
     retryable: false,
     currentRevision: 2,
   },
+} as const
+
+export const preferenceDataExportHttpResultFixture = {
+  evidence: [liveEvidenceProvenanceFixture],
+  candidates: [preferenceCandidateFixture],
+  activePreferences: [activePreferenceRecordFixture],
+  connectionSettings: connectionSettingsFixture,
+  auditEvents: [auditEventFixture],
 } as const

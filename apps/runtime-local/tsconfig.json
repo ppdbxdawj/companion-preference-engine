@@ -1,0 +1,28 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": "../..",
+    "paths": {
+      "@companion-preference/contracts": [
+        "packages/contracts/dist/index.d.mts"
+      ],
+      "@companion-preference/observer": [
+        "packages/observer/dist/index.d.mts"
+      ],
+      "@companion-preference/preference-core": [
+        "packages/preference-core/dist/index.d.mts"
+      ],
+      "@companion-preference/profile-store-sqlite": [
+        "packages/profile-store-sqlite/dist/index.d.mts"
+      ]
+    },
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
+  ]
+}

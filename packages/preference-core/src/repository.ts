@@ -62,6 +62,23 @@ export type CompleteEvidenceProcessing = Readonly<{
   occurredAt: string
 }>
 
+export type EvidenceDiscardReasonCode =
+  | 'stale-settings-revision'
+  | 'late-result-discarded'
+
+/**
+ * Atomically terminalizes a still-valid claim without creating candidates.
+ * `expectedSettingsRevision` fences the current canonical connection settings,
+ * rather than the policy snapshot captured on the evidence.
+ */
+export type DiscardEvidenceProcessing = Readonly<{
+  claim: EvidenceClaimRef
+  expectedSettingsRevision: number
+  reasonCode: EvidenceDiscardReasonCode
+  auditEventId: string
+  occurredAt: string
+}>
+
 /** Internal, content-free replay fence for a completed worker command. */
 export type EvidenceCompletionReplay = Readonly<{
   evidenceId: string
@@ -106,6 +123,7 @@ export interface PreferenceRepository {
   renewEvidenceClaim(claim: EvidenceClaimRef, leaseUntil: string, now: string): Promise<void>
   releaseEvidenceClaim(claim: EvidenceClaimRef): Promise<void>
   completeEvidenceProcessingAtomically(command: CompleteEvidenceProcessing): Promise<void>
+  discardEvidenceProcessingAtomically(command: DiscardEvidenceProcessing): Promise<void>
   getEvidenceProvenance(id: string): Promise<EvidenceProvenance | undefined>
   listEvidenceProvenance(identity: IdentityContext): Promise<EvidenceProvenance[]>
   proposeCandidateAtomically(command: ProposeCandidateCommand): Promise<PreferenceCandidate>
@@ -122,6 +140,7 @@ export interface PreferenceRepository {
   getPreference(id: string): Promise<PreferenceRecord | undefined>
   listActivePreferences(identity: IdentityContext): Promise<PreferenceRecord[]>
   getConnectionSettings(identity: PreferenceIdentity, hostId: string): Promise<ConnectionSettings>
+  listConnectionSettings(identity: PreferenceIdentity): Promise<ConnectionSettings[]>
   updateConnectionSettingsAtomically(command: UpdateConnectionSettingsCommand): Promise<ConnectionSettings>
   reportAdapterProjectionStatusAtomically(command: ReportProjectionStatusCommand): Promise<AdapterProjectionStatus>
   recordPolicyDecisionAtomically(decision: ContentFreePolicyDecision): Promise<void>

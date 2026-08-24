@@ -4,7 +4,7 @@ Local-first, host-neutral governance for companion-agent preferences.
 
 [中文说明](README.zh-CN.md) · [Apache-2.0](LICENSE) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
-> **Development Preview — M0**
+> **Development Preview — M0.5 checkpoint passed**
 >
 > This repository is an experimental core library. It is not a chat product
 > and does not yet ship a runtime process, UI, MCP server, HTTP server,
@@ -48,6 +48,9 @@ tombstone.
 - Local connection settings, adapter projection truth, content-free policy
   decision audits, evidence tombstones, candidate scrubbing, and optional
   dependent-preference revocation.
+- A deterministic, synthetic terminal walkthrough of candidate confirmation,
+  scoped application, and revocation. It is an interaction checkpoint, not a
+  model or chat experience.
 
 The current implementation is an embeddable foundation, not a finished agent.
 
@@ -64,9 +67,19 @@ pnpm run check
 pnpm run build
 ```
 
-`pnpm run check` runs all Vitest suites, both package typechecks, and
+`pnpm run check` runs all Vitest suites, all workspace typechecks, and
 `git diff --check`. The preview currently has no `pnpm dev` command because no
 runtime or UI package exists yet.
+
+To replay the M0.5 terminal walkthrough locally:
+
+```bash
+pnpm --filter @companion-preference/m0-terminal demo
+```
+
+It uses synthetic data, a Fake Observer, in-memory state, and fixed templates.
+See the recorded [M0.5 checkpoint](docs/m0p5-experience-checkpoint.md) before
+treating it as product evidence.
 
 ## Package map
 
@@ -78,6 +91,9 @@ packages/preference-core
   explain               human-readable resolution explanations
   repository            host-neutral repository port and errors
   in-memory-repository  local reference implementation
+packages/observer       Fake Observer and host-neutral Observer port
+evals                   synthetic evaluation data, baselines, and metrics
+apps/m0-terminal        deterministic M0.5 interaction walkthrough
 docs/plans              design, implementation, routing, and preview plans
 ```
 
@@ -118,7 +134,8 @@ atomic repository behavior, and privacy/deletion invariants.
 
 ## Roadmap
 
-The next layers are intentionally separate from this core:
+The M0.5 interaction checkpoint has passed. The next layers are intentionally
+separate from this core:
 
 1. A small local runtime and persistence adapter with explicit snapshot and
    migration semantics.

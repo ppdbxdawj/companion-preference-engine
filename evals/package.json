@@ -1,0 +1,13 @@
+{
+  "name": "@companion-preference/evals",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root .. evals/src/load.test.ts evals/src/candidate-eval.test.ts evals/src/baselines/baselines.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@companion-preference/contracts": "workspace:*"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@companion-preference/inspector",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "scripts": {
+    "build": "vite build --configLoader runner",
+    "dev": "vite --configLoader runner",
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@companion-preference/contracts": "workspace:*",
+    "vue": "3.5.41"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.8",
+    "@vue/test-utils": "2.4.11",
+    "happy-dom": "20.11.6",
+    "vite": "8.2.2"
+  }
+}

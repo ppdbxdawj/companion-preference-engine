@@ -1,6 +1,8 @@
+import vue from './apps/inspector/node_modules/@vitejs/plugin-vue/dist/index.mjs'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  plugins: [vue()],
   test: {
     environment: 'node',
     include: [
