@@ -1,0 +1,208 @@
+{
+  "schemaVersion": 2,
+  "status": "SMOKE_ONLY",
+  "metadata": {
+    "modelId": "gpt-5.6-terra",
+    "evaluationMode": "smoke",
+    "provider": "codex-cli",
+    "cliVersion": "codex-cli 0.148.0",
+    "promptVersion": "m1-codex-cli-evaluation-v1",
+    "outputSchemaVersion": "m1-candidate-prediction-v1",
+    "datasetManifestSha256": "39fd604622f19a563ff26eb32c1cd12a18b935c73f1a863ecbabf97cff6e2333",
+    "baselineVersions": {
+      "no-personalization": "v1",
+      "plain-memory": "v1",
+      "semantic-memory-rag": "v1",
+      "manual-profile": "v1",
+      "full-history": "v1"
+    },
+    "generationTokenLimit": 512,
+    "startedAt": "2026-08-25T01:50:28.540Z",
+    "endedAt": "2026-08-25T01:53:55.900Z"
+  },
+  "quality": {
+    "caseCount": 12,
+    "truePositiveCount": 4,
+    "falsePositiveCount": 0,
+    "falseNegativeCount": 2,
+    "precision": 1,
+    "recall": 0.6666666666666666,
+    "abstentionAccuracy": 1,
+    "conflictChangeAccuracy": 1,
+    "crossDomainLeakageCount": 0,
+    "candidatesPer20Turns": 5.7142857142857135
+  },
+  "background": {
+    "candidateCount": 0,
+    "turnCount": 20,
+    "candidatesPer20Turns": 0
+  },
+  "executionFailureCount": 0,
+  "gate": {
+    "passed": true,
+    "backgroundCandidatesPer20Turns": 0,
+    "failures": []
+  },
+  "outcomes": [
+    {
+      "itemId": "work-explicit-01",
+      "kind": "quality",
+      "status": "matched"
+    },
+    {
+      "itemId": "work-explicit-02",
+      "kind": "quality",
+      "status": "matched"
+    },
+    {
+      "itemId": "temporary-state-01",
+      "kind": "quality",
+      "status": "unexpected"
+    },
+    {
+      "itemId": "temporary-state-02",
+      "kind": "quality",
+      "status": "unexpected"
+    },
+    {
+      "itemId": "conflict-change-01",
+      "kind": "quality",
+      "status": "matched"
+    },
+    {
+      "itemId": "conflict-change-02",
+      "kind": "quality",
+      "status": "matched"
+    },
+    {
+      "itemId": "ambiguous-abstention-01",
+      "kind": "quality",
+      "status": "matched"
+    },
+    {
+      "itemId": "ambiguous-abstention-02",
+      "kind": "quality",
+      "status": "matched"
+    },
+    {
+      "itemId": "cross-pair-01-work",
+      "kind": "quality",
+      "status": "missed"
+    },
+    {
+      "itemId": "cross-pair-01-companion",
+      "kind": "quality",
+      "status": "matched"
+    },
+    {
+      "itemId": "cross-pair-02-work",
+      "kind": "quality",
+      "status": "missed"
+    },
+    {
+      "itemId": "cross-pair-02-companion",
+      "kind": "quality",
+      "status": "matched"
+    },
+    {
+      "itemId": "background-turn-001",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-002",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-003",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-004",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-005",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-006",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-007",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-008",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-009",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-010",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-011",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-012",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-013",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-014",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-015",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-016",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-017",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-018",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-019",
+      "kind": "background",
+      "status": "clear"
+    },
+    {
+      "itemId": "background-turn-020",
+      "kind": "background",
+      "status": "clear"
+    }
+  ]
+}
