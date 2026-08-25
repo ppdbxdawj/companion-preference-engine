@@ -11,6 +11,53 @@ export type M1DatasetComposition = Readonly<{
   categoryCounts: Readonly<Record<DevelopmentEvaluationCase['category'], number>>
 }>
 
+export type CrossDomainDatasetQuality = Readonly<{
+  pairCount: number
+  distinctTurnTextCount: number
+}>
+
+export function validateCrossDomainDatasetQuality(
+  cases: readonly DevelopmentEvaluationCase[],
+): CrossDomainDatasetQuality {
+  const pairs = new Map<string, DevelopmentEvaluationCase[]>()
+  const textOwners = new Map<string, string>()
+  for (const item of cases) {
+    if (item.category !== 'cross-domain-counterfactual' || !item.counterfactualPairId) {
+      throw new Error('cross-domain dataset contains a non-cross-domain case')
+    }
+    const normalizedText = JSON.stringify(item.turns.map((turn) => ({ role: turn.role, text: turn.text })))
+    const existingOwner = textOwners.get(normalizedText)
+    if (existingOwner !== undefined && existingOwner !== item.counterfactualPairId) {
+      throw new Error(`duplicate cross-domain pair turn text: ${item.counterfactualPairId} and ${existingOwner}`)
+    }
+    textOwners.set(normalizedText, item.counterfactualPairId)
+    const pair = pairs.get(item.counterfactualPairId) ?? []
+    pair.push(item)
+    pairs.set(item.counterfactualPairId, pair)
+  }
+  for (const [pairId, pair] of pairs) {
+    const work = pair.filter((item) => item.queryContext.domain === 'work')
+    const companion = pair.filter((item) => item.queryContext.domain === 'companion')
+    if (work.length !== 1 || companion.length !== 1) {
+      throw new Error(`cross-domain pair ${pairId} must contain one work and one companion case`)
+    }
+    const workCase = work[0]!
+    const companionCase = companion[0]!
+    if (workCase.expectedCandidates.length === 0) {
+      throw new Error(`cross-domain work case ${workCase.id} must have an expected candidate`)
+    }
+    if (companionCase.expectedCandidates.length !== 0) {
+      throw new Error(`cross-domain companion case ${companionCase.id} must abstain`)
+    }
+    for (const candidate of workCase.expectedCandidates) {
+      if (!companionCase.forbiddenKeys.includes(candidate.preference.key)) {
+        throw new Error(`cross-domain companion case ${companionCase.id} must forbid ${candidate.preference.key}`)
+      }
+    }
+  }
+  return { pairCount: pairs.size, distinctTurnTextCount: textOwners.size }
+}
+
 export function validateM1DatasetComposition(
   input: M1DatasetCompositionInput,
 ): M1DatasetComposition {

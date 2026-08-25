@@ -1,7 +1,7 @@
 import type { DevelopmentEvaluationCase } from './schema.js'
 import { describe, expect, it } from 'vitest'
 
-import { validateM1DatasetComposition } from './m1-dataset-contract.js'
+import { validateCrossDomainDatasetQuality, validateM1DatasetComposition } from './m1-dataset-contract.js'
 
 const categoryMinimums = {
   'work-explicit-or-repeated': 15,
@@ -85,5 +85,22 @@ describe('M1 dataset composition freeze', () => {
         text: 'Synthetic ordinary conversation.',
       })),
     })).toThrow(/counterfactual/i)
+  })
+
+  it('rejects duplicate normalized turn text across cross-domain pairs', () => {
+    expect(() => validateCrossDomainDatasetQuality(validQualitySet().filter(
+      (item) => item.category === 'cross-domain-counterfactual',
+    ))).toThrow(/text/i)
+  })
+
+  it('requires labeled work cases and abstaining companion cases', () => {
+    const cases = validQualitySet().filter((item) => item.category === 'cross-domain-counterfactual')
+    const workCase = cases.find((item) => item.queryContext.domain === 'work')!
+    const invalidCases = cases.map((item) => ({
+      ...item,
+      turns: item.turns.map((turn) => ({ ...turn, text: `${item.id} explicit input` })),
+      ...(item === workCase ? { expectedCandidates: [] } : {}),
+    }))
+    expect(() => validateCrossDomainDatasetQuality(invalidCases)).toThrow(/work.*candidate|candidate.*work/i)
   })
 })
