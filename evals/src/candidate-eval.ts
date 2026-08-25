@@ -3,6 +3,69 @@ import type { BehaviorGuidance } from '@companion-preference/contracts'
 import type { EvaluatedCandidate } from './baselines/types.js'
 import type { DevelopmentEvaluationCase } from './schema.js'
 
+export type QualityOutcomeStatus = 'matched' | 'missed' | 'unexpected' | 'mixed' | 'execution-error'
+
+export type QualityCaseOutcome = Readonly<{
+  caseId: string
+  kind: 'quality'
+  status: QualityOutcomeStatus
+}>
+
+const canonical = (value: unknown): string => {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+  const record = value as Record<string, unknown>
+  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonical(record[key])}`).join(',')}}`
+}
+
+const candidateKey = (candidate: EvaluatedCandidate): string =>
+  canonical({ preference: candidate.preference, scope: candidate.scope })
+
+function compareQualityOutcome(
+  evaluationCase: DevelopmentEvaluationCase,
+  prediction: CandidateEvaluationPrediction,
+): Readonly<{ missing: boolean; unexpected: boolean }> {
+  const expectedCounts = new Map<string, number>()
+  for (const candidate of evaluationCase.expectedCandidates) {
+    const key = candidateKey(candidate)
+    expectedCounts.set(key, (expectedCounts.get(key) ?? 0) + 1)
+  }
+  let missing = false
+  let unexpected = false
+  for (const candidate of prediction.candidates) {
+    const key = candidateKey(candidate)
+    const remaining = expectedCounts.get(key) ?? 0
+    if (remaining > 0) expectedCounts.set(key, remaining - 1)
+    else unexpected = true
+  }
+  if ([...expectedCounts.values()].some((count) => count > 0)) missing = true
+
+  const expectedGuidance = evaluationCase.expectedGuidance as Record<string, unknown>
+  const predictedGuidance = prediction.guidance as Record<string, unknown>
+  for (const [key, value] of Object.entries(expectedGuidance)) {
+    if (!Object.hasOwn(predictedGuidance, key) || canonical(predictedGuidance[key]) !== canonical(value)) missing = true
+  }
+  for (const [key, value] of Object.entries(predictedGuidance)) {
+    if (!Object.hasOwn(expectedGuidance, key) || canonical(expectedGuidance[key]) !== canonical(value)) unexpected = true
+  }
+  return { missing, unexpected }
+}
+
+export function classifyQualityCaseOutcome(
+  evaluationCase: DevelopmentEvaluationCase,
+  prediction: CandidateEvaluationPrediction,
+): QualityCaseOutcome {
+  const comparison = compareQualityOutcome(evaluationCase, prediction)
+  const status = comparison.missing && comparison.unexpected
+    ? 'mixed'
+    : comparison.missing
+      ? 'missed'
+      : comparison.unexpected
+        ? 'unexpected'
+        : 'matched'
+  return { caseId: evaluationCase.id, kind: 'quality', status }
+}
+
 export type CandidateEvaluationPrediction = Readonly<{
   caseId: string
   candidates: readonly EvaluatedCandidate[]
@@ -31,14 +94,6 @@ export function scoreCandidateEvaluation(
   cases: readonly DevelopmentEvaluationCase[],
   predictions: readonly CandidateEvaluationPrediction[],
 ): CandidateEvaluationMetrics {
-  const canonical = (value: unknown): string => {
-    if (value === null || typeof value !== 'object') return JSON.stringify(value)
-    if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
-    const record = value as Record<string, unknown>
-    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonical(record[key])}`).join(',')}}`
-  }
-  const candidateKey = (candidate: EvaluatedCandidate): string =>
-    canonical({ preference: candidate.preference, scope: candidate.scope })
   const exact = (left: unknown, right: unknown): boolean => canonical(left) === canonical(right)
 
   const caseIds = new Set<string>()

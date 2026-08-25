@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { NoPersonalizationBaseline } from './baselines/no-personalization.js'
 import type { CandidateEvaluationPrediction } from './candidate-eval.js'
-import { scoreCandidateEvaluation } from './candidate-eval.js'
+import { classifyQualityCaseOutcome, scoreCandidateEvaluation } from './candidate-eval.js'
 
 const base = {
   schemaVersion: 1,
@@ -75,6 +75,33 @@ const cases: DevelopmentEvaluationCase[] = [
 ]
 
 describe('frozen candidate metrics', () => {
+  it('classifies quality outcomes without retaining evaluation content', () => {
+    expect(classifyQualityCaseOutcome(cases[0]!, { caseId: 'positive', candidates: [], guidance: {} })).toEqual({
+      caseId: 'positive',
+      kind: 'quality',
+      status: 'missed',
+    })
+    expect(classifyQualityCaseOutcome(cases[1]!, {
+      caseId: 'abstain',
+      candidates: [preference],
+      guidance: {},
+    })).toEqual({ caseId: 'abstain', kind: 'quality', status: 'unexpected' })
+    expect(classifyQualityCaseOutcome(cases[0]!, {
+      caseId: 'positive',
+      candidates: [preference, { ...preference, preference: { key: 'interaction.directness', value: 'direct' } }],
+      guidance: {},
+    })).toEqual({ caseId: 'positive', kind: 'quality', status: 'mixed' })
+    expect(classifyQualityCaseOutcome(cases[0]!, {
+      caseId: 'positive',
+      candidates: [preference],
+      guidance: { responseDetail: 'concise' },
+    })).toEqual({ caseId: 'positive', kind: 'quality', status: 'matched' })
+    const serialized = JSON.stringify(classifyQualityCaseOutcome(cases[0]!, { caseId: 'positive', candidates: [], guidance: {} }))
+    expect(serialized).not.toContain('Synthetic text.')
+    expect(serialized).not.toContain('interaction.response_detail')
+    expect(serialized).not.toContain('concise')
+  })
+
   it('scores exact matches, abstention, changes, leakage, and normalized volume', () => {
     const predictions: CandidateEvaluationPrediction[] = [
       { caseId: 'positive', candidates: [preference], guidance: { responseDetail: 'concise' } },
