@@ -58,14 +58,21 @@ export type HeldOutEvaluationInput = Readonly<{
   queryContext: EffectiveProfileQuery
 }>
 
+export type BackgroundEvaluationTurn = Readonly<{
+  schemaVersion: 1
+  sourceRef: string
+  role: 'user' | 'assistant'
+  text: string
+}>
+
 export type DatasetManifestEntry = Readonly<{
   path: string
-  kind: 'development' | 'held-out-input'
+  kind: 'development' | 'held-out-input' | 'background-turn'
   caseCount: number
   sha256: string
 }>
 
-export type DatasetManifest = Readonly<{
+export type DatasetManifestV1 = Readonly<{
   schemaVersion: 1
   frozenAt: string
   datasets: readonly DatasetManifestEntry[]
@@ -76,6 +83,28 @@ export type DatasetManifest = Readonly<{
   }>
   labelChangePolicy: 'new-manifest-version-and-reviewed-gold-correction'
 }>
+
+export type DatasetManifestV2 = Readonly<{
+  schemaVersion: 2
+  frozenAt: string
+  datasets: readonly DatasetManifestEntry[]
+  qualityMinimums: Readonly<{
+    workExplicitOrRepeated: number
+    temporaryState: number
+    conflictOrChange: number
+    ambiguousAbstention: number
+    crossDomainPairs: number
+  }>
+  backgroundMinimumTurns: number
+  externalHeldOutLabels: Readonly<{
+    caseCount: number
+    sha256: string
+    storage: 'external-high-tier-only'
+  }>
+  labelChangePolicy: 'new-manifest-version-and-reviewed-gold-correction'
+}>
+
+export type DatasetManifest = DatasetManifestV1 | DatasetManifestV2
 
 /** Runtime validators in load.ts must enforce these exact v1 invariants. */
 export const evaluationSchemaV1 = Object.freeze({

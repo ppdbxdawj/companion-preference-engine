@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": "../..",
+    "paths": {
+      "@companion-preference/contracts": [
+        "packages/contracts/dist/index.d.mts"
+      ],
+      "@companion-preference/runtime-client": [
+        "packages/runtime-client/dist/index.d.mts"
+      ]
+    },
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": [
+    "src/**/*.ts"
+  ]
+}

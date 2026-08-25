@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ManualProfileBaseline } from './manual-profile.js'
 import { PlainMemoryBaseline } from './plain-memory.js'
 import { SemanticMemoryRagBaseline } from './semantic-memory-rag.js'
+import { FullHistoryBaseline } from './full-history.js'
 import type { BaselineInput, SemanticMemoryBackbone } from './types.js'
 
 const evaluationCase: DevelopmentEvaluationCase = {
@@ -94,6 +95,21 @@ describe('frozen baseline behavior', () => {
       candidates: [],
       guidance: { directness: 'gentle', supportStyle: 'listen_first' },
     })
+  })
+
+  it('full history is an explicit ungoverned baseline over the same consented turns', async () => {
+    const baseline = new FullHistoryBaseline()
+    await expect(baseline.evaluate(input)).resolves.toEqual({
+      candidates: [
+        {
+          preference: { key: 'interaction.response_detail', value: 'concise' },
+          scope: { kind: 'domain', domain: 'work' },
+        },
+      ],
+      guidance: { responseDetail: 'concise' },
+    })
+    expect(baseline.id).toBe('full-history')
+    expect(baseline.governedCandidateState).toBe(false)
   })
 
   it('all executable baselines reject a pre-aborted call with AbortError', async () => {

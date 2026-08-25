@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run --root .. evals/src/load.test.ts evals/src/candidate-eval.test.ts evals/src/baselines/baselines.test.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "test": "vitest run --root .. evals/src",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "eval:model-gate": "tsx src/run-model-gate.ts"
   },
   "dependencies": {
     "@companion-preference/contracts": "workspace:*"
