@@ -7,12 +7,12 @@ import { promisify } from 'node:util'
 
 import type { BehaviorGuidance, Preference, PreferenceScope } from '@companion-preference/contracts'
 
-import { scoreCandidateEvaluation, type CandidateEvaluationPrediction } from './candidate-eval.js'
+import { classifyQualityCaseOutcome, scoreCandidateEvaluation, type CandidateEvaluationPrediction } from './candidate-eval.js'
 import { scoreBackgroundBurden } from './behavior-eval.js'
 import { loadBackgroundTurns, loadDatasetManifest, loadDevelopmentDataset, verifyDatasetManifest } from './load.js'
 import { validateM1DatasetComposition } from './m1-dataset-contract.js'
 import { decideM1Gate } from './m1-gate.js'
-import { createM1Report, renderM1ReportMarkdown } from './report.js'
+import { createM1Report, renderM1ReportMarkdown, type EvaluationItemOutcome } from './report.js'
 import type { BackgroundEvaluationTurn, DevelopmentEvaluationCase } from './schema.js'
 
 const execFileAsync = promisify(execFile)
@@ -281,6 +281,29 @@ export class CodexEvaluationRunner {
   }
 }
 
+export function createQualityOutcome(
+  evaluationCase: DevelopmentEvaluationCase,
+  prediction: CandidateEvaluationPrediction | undefined,
+  executionError = false,
+): EvaluationItemOutcome {
+  if (executionError) return { itemId: evaluationCase.id, kind: 'quality', status: 'execution-error' }
+  if (!prediction) throw new Error(`missing prediction for ${evaluationCase.id}`)
+  const outcome = classifyQualityCaseOutcome(evaluationCase, prediction)
+  return { itemId: outcome.caseId, kind: outcome.kind, status: outcome.status }
+}
+
+export function createBackgroundOutcome(
+  itemId: string,
+  candidateCount: number,
+  executionError = false,
+): EvaluationItemOutcome {
+  return {
+    itemId,
+    kind: 'background',
+    status: executionError ? 'execution-error' : candidateCount === 0 ? 'clear' : 'candidate-emitted',
+  }
+}
+
 export type ModelGateOptions = Readonly<{
   evaluationMode?: 'full' | 'smoke'
   model: string
@@ -319,21 +342,28 @@ export async function runModelGate(options: ModelGateOptions): Promise<ReturnTyp
     : backgroundTurns
   const runner = new CodexEvaluationRunner({ executable: options.executable ?? 'codex', model: options.model })
   const predictions: CandidateEvaluationPrediction[] = []
+  const outcomes: EvaluationItemOutcome[] = []
   let executionFailureCount = 0
   for (const item of selectedQualityCases) {
     try {
-      predictions.push(await runner.runQuality(item))
+      const prediction = await runner.runQuality(item)
+      predictions.push(prediction)
+      outcomes.push(createQualityOutcome(item, prediction))
     } catch {
       executionFailureCount += 1
       predictions.push({ caseId: item.id, candidates: [], guidance: {} })
+      outcomes.push(createQualityOutcome(item, undefined, true))
     }
   }
   let backgroundCandidateCount = 0
   for (const turn of selectedBackgroundTurns) {
     try {
-      backgroundCandidateCount += await runner.runBackground(turn)
+      const candidateCount = await runner.runBackground(turn)
+      backgroundCandidateCount += candidateCount
+      outcomes.push(createBackgroundOutcome(turn.sourceRef, candidateCount))
     } catch {
       executionFailureCount += 1
+      outcomes.push(createBackgroundOutcome(turn.sourceRef, 0, true))
     }
   }
   const quality = scoreCandidateEvaluation(selectedQualityCases, predictions)
@@ -359,6 +389,7 @@ export async function runModelGate(options: ModelGateOptions): Promise<ReturnTyp
       backgroundTurnCount: selectedBackgroundTurns.length,
     executionFailureCount,
     gate,
+    outcomes,
   })
   await writeFile(options.outputJsonPath, JSON.stringify(report, null, 2) + '\n', 'utf8')
   await writeFile(options.outputMarkdownPath, renderM1ReportMarkdown(report), 'utf8')
