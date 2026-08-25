@@ -22,10 +22,17 @@ export type M1ReportInput = Readonly<{
   backgroundTurnCount: number
   executionFailureCount: number
   gate: M1GateDecision
+  outcomes: readonly EvaluationItemOutcome[]
+}>
+
+export type EvaluationItemOutcome = Readonly<{
+  itemId: string
+  kind: 'quality' | 'background'
+  status: 'matched' | 'missed' | 'unexpected' | 'mixed' | 'execution-error' | 'clear' | 'candidate-emitted'
 }>
 
 export type M1Report = Readonly<{
-  schemaVersion: 1
+  schemaVersion: 2
   status: 'M1_GATE' | 'SMOKE_ONLY'
   metadata: M1RunMetadata
   quality: CandidateEvaluationMetrics
@@ -36,6 +43,7 @@ export type M1Report = Readonly<{
   }>
   executionFailureCount: number
   gate: M1GateDecision
+  outcomes: readonly EvaluationItemOutcome[]
 }>
 
 const nonEmpty = (value: string, field: string): string => {
@@ -61,8 +69,19 @@ export function createM1Report(input: M1ReportInput): M1Report {
   if (!Number.isInteger(input.backgroundCandidateCount) || input.backgroundCandidateCount < 0) {
     throw new Error('background candidate count must be non-negative')
   }
+  const outcomeIds = new Set<string>()
+  for (const outcome of input.outcomes) {
+    if (outcome.itemId.trim() === '') throw new Error('outcome item ID must be non-empty')
+    const identity = `${outcome.kind}:${outcome.itemId}`
+    if (outcomeIds.has(identity)) throw new Error(`duplicate outcome item: ${identity}`)
+    outcomeIds.add(identity)
+    const validStatus = outcome.kind === 'quality'
+      ? ['matched', 'missed', 'unexpected', 'mixed', 'execution-error'].includes(outcome.status)
+      : ['clear', 'candidate-emitted', 'execution-error'].includes(outcome.status)
+    if (!validStatus) throw new Error(`invalid outcome status for ${outcome.kind}: ${outcome.status}`)
+  }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: input.metadata.evaluationMode === 'smoke' ? 'SMOKE_ONLY' : 'M1_GATE',
     metadata: input.metadata,
     quality: input.quality,
@@ -73,10 +92,14 @@ export function createM1Report(input: M1ReportInput): M1Report {
     },
     executionFailureCount: input.executionFailureCount,
     gate: input.gate,
+    outcomes: input.outcomes,
   }
 }
 
 export function renderM1ReportMarkdown(report: M1Report): string {
+  const statusCounts = new Map<string, number>()
+  for (const outcome of report.outcomes) statusCounts.set(outcome.status, (statusCounts.get(outcome.status) ?? 0) + 1)
+  const renderedStatusCounts = [...statusCounts.entries()].map(([status, count]) => `- ${status}: ${count}`)
   return [
     '# M1 Model Gate Report',
     '',
@@ -90,6 +113,9 @@ export function renderM1ReportMarkdown(report: M1Report): string {
     `- Cross-domain leakage: ${report.quality.crossDomainLeakageCount}`,
     `- Background candidates per 20 turns: ${report.background.candidatesPer20Turns.toFixed(3)}`,
     `- Model execution failures: ${report.executionFailureCount}`,
+    '',
+    '## Content-free outcome counts',
+    ...renderedStatusCounts,
     '',
     report.gate.failures.length === 0
       ? 'All binding thresholds passed.'
