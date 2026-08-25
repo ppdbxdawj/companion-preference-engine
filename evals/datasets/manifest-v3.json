@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 2,
+  "frozenAt": "2026-08-25T14:00:00Z",
+  "datasets": [
+    {
+      "path": "work-v1.jsonl",
+      "kind": "development",
+      "caseCount": 45,
+      "sha256": "4744a7393e6bbd16953378dd866a4c111cde6952f7410252d05cb335aca83201"
+    },
+    {
+      "path": "cross-domain-v2.jsonl",
+      "kind": "development",
+      "caseCount": 30,
+      "sha256": "2e96413a7d47711c2c7225ae326b2ac4e3ffb76ac51a5704499e0b17c6e2404e"
+    },
+    {
+      "path": "confirmation-burden-v1.jsonl",
+      "kind": "background-turn",
+      "caseCount": 100,
+      "sha256": "e6ed0eced52817ffd93055c5d342c53e31f90f23bf2e205e10367a0e509418e3"
+    },
+    {
+      "path": "held-out-input-core-v1.jsonl",
+      "kind": "held-out-input",
+      "caseCount": 12,
+      "sha256": "c929e3eefa30b62b198b6ed6b3b42a1b31f32f7e449464ac72cbf07883e4b0c1"
+    }
+  ],
+  "qualityMinimums": {
+    "workExplicitOrRepeated": 15,
+    "temporaryState": 10,
+    "conflictOrChange": 10,
+    "ambiguousAbstention": 10,
+    "crossDomainPairs": 15
+  },
+  "backgroundMinimumTurns": 100,
+  "externalHeldOutLabels": {
+    "caseCount": 12,
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "storage": "external-high-tier-only"
+  },
+  "labelChangePolicy": "new-manifest-version-and-reviewed-gold-correction"
+}
